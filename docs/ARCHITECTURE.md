@@ -31,7 +31,7 @@ Android 使用 Javet Node Android 运行时和应用私有 npm 项目目录安�
 
 Android Harness 的模型循环由 Kotlin `HarnessEngine` 承载。它从原版 `ctx.tools.schemas(agent)` 获取模型可调用工具定义，经审批后把 tool-call 交给上游 `ctx.tools.execute()`；工具返回值、错误和附加上下文再进入本地会话记录及下一次模型请求。Agent/session seam 与原版 Cordis API 相接，但 Android 尚未装配完整上游 `dsh-agent-loop`、profile/bundle 树或所有上游 services。因此能安装任意包不代表它依赖的 service 已提供；完整插件兼容边界见[插件兼容性](PLUGIN_COMPATIBILITY.md)。
 
-本机 Cordis Session event 快照保存到 app 私有 `filesDir/plugins/sessions/`，以 session ID 的 SHA-256 作为本地文件名；Room 单独保存聊天消息、任务状态和执行日志。进程/Node runtime 重建后，会从快照恢复原版 Session，再启用 Room 中仍标记为启用的插件。显式删除会话时会同时销毁 Agent scope 并删除 Session 快照。
+本机 Cordis Session event 快照保存到 app 私有 `filesDir/plugins/sessions/`，以 session ID 的 SHA-256 作为本地文件名；Room 单独保存聊天消息、任务状态和执行日志。instrumented test 验证了关闭再创建 Node runtime 后从快照恢复原版 Session，再启用 Room 中仍标记为启用的插件；Android 整个 app 强停/重启恢复尚未执行仪器验证。显式删除会话时会同时销毁 Agent scope 并删除 Session 快照。
 
 ## 模块分层
 
@@ -70,5 +70,5 @@ Android Harness 的模型循环由 Kotlin `HarnessEngine` 承载。它从原版 
 
 - 最低 API 26；compile/target API 36；打包 `arm64-v8a` 和 `x86_64`。
 - `dataSync` foreground service 在 Android 允许的窗口内显示任务通知并提供取消入口。Android 后台限制、电量策略、用户强停和服务超时仍可能中断长任务，不承诺无限后台运行。
-- Room 结构化状态及 Cordis Session 文件跨进程重启保留。Room schema migration、会话外部格式互通及系统备份策略仍未完整实现。
+- Room 结构化状态及 Cordis Session 文件位于应用私有持久目录；Node runtime 重建恢复已验证，Android app 强停/重启和升级迁移仍未完整验证。Room schema migration、会话外部格式互通及系统备份策略尚未完整实现。
 - 真实设备验证范围及未测试 ABI 见[插件兼容性](PLUGIN_COMPATIBILITY.md)和[平台限制](PLATFORM_LIMITATIONS.md)。

@@ -34,7 +34,7 @@ Shell 使用 Android `/system/bin/sh`，以普通 app UID 在应用 sandbox 运�
 
 应用用 `dataSync` Foreground Service 展示活动通知并提供取消入口；Android 版本、前台服务启动条件、时限、省电策略、用户强停和进程压力均可能打断任务。应用不承诺无限后台执行。
 
-Room 保存任务和会话状态；进程死亡恢复会将未完成流记录为 interrupted，不会自动重发旧模型请求。Node 插件被应用进程一起终止；下次启动会从本地 Room 恢复启用配置，首次需要插件 schema/tool 时重建 Cordis context。正在执行的插件同步代码不保证可抢占。
+Room 保存任务和会话状态；进程死亡恢复会将未完成流记录为 interrupted，不会自动重发旧模型请求。Node 插件被应用进程一起终止；下次启动会从本地 Room 恢复启用配置，首次需要插件 schema/tool 时重建 Cordis context。instrumented test 验证过 Node runtime teardown/recreation，不等同于 Android app 强停/重启测试。
 
 ## 验证边界
 

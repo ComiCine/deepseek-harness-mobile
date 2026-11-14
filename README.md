@@ -12,7 +12,7 @@ Android 插件页直接安装原版 npm 包或原版 `.tgz`，通过嵌入式 No
 - 上游 Cordis Loader、`dsh-tools` 工具 schema/执行管线，以及在设备内运行原版 npm ESM 插件所需的 Node.js runtime。
 - 原版插件 npm registry 安装和本地 `.tgz` 安装、依赖解析、配置校验、启停、更新替换、卸载及本地包完整性记录。
 - 应用私有工作区文件工具、SAF 单文件导入/导出、普通应用 UID 下的 Android `/system/bin/sh` 命令工具。
-- 前台任务通知、用户取消、多会话并发保护、会话/工具日志及进程重启后的状态恢复。
+- 前台任务通知、用户取消、多会话并发保护、会话/工具日志和本地插件配置恢复。
 
 本项目尚未达到上游 `web`/`desktop` 默认 profile 的完整功能 parity。Agent 主循环及界面由 Android 代码承载，当前装配的 Cordis services 是有限子集。MCP、subagents/teams、workflows/PTC、web tools、skills、jobs 等功能和依赖它们的插件不能据此视为已兼容。未运行的功能不会作为已完成能力宣传。
 
@@ -37,7 +37,7 @@ debug APK 按 ABI 输出在 `app/build/outputs/apk/debug/`。当前支持 `arm64
 
 ## 验证
 
-仪器测试 `PluginRuntimeInstrumentedTest` 在 Android 36 arm64 模拟器上验证了原版 `@deepseek-ai/dsh-repeat-tool-reminder@0.2.2-rc.3` 与 `@deepseek-ai/dsh-tool-todo@0.2.2-rc.3`：registry 与原始 tarball 安装、原始 ESM manifest、npm 依赖解析、有效/无效配置、Cordis 工具执行和错误结果、重复工具提醒、Node runtime 重建后恢复原始 Session 事件、停用清理、卸载和会话数据删除。执行记录和其他未验证项见[兼容性文档](docs/PLUGIN_COMPATIBILITY.md)。这项验证不覆盖真实 DeepSeek API 账户、物理设备、x86_64 native runtime 或全部插件包。
+仪器测试 `PluginRuntimeInstrumentedTest` 在 Android 36 arm64 模拟器上验证了原版 `@deepseek-ai/dsh-repeat-tool-reminder@0.2.2-rc.3` 与 `@deepseek-ai/dsh-tool-todo@0.2.2-rc.3`：registry 与原始 tarball 安装、原始 ESM manifest、npm 依赖解析、有效/无效配置、Cordis 工具执行和错误结果、重复工具提醒、Node runtime 关闭再创建后恢复原始 Session 事件、停用清理、卸载和会话数据删除。Android 整个 app 的强停/重启恢复尚未做仪器验证。执行记录和其他未验证项见[兼容性文档](docs/PLUGIN_COMPATIBILITY.md)。这项验证不覆盖真实 DeepSeek API 账户、物理设备、x86_64 native runtime 或全部插件包。
 
 ## 文档
 

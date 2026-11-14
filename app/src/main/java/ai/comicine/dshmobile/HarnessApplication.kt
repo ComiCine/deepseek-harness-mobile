@@ -29,7 +29,7 @@ class HarnessApplication : Application() {
     }
 
     override fun onTerminate() {
-        engine.cancelAll()
+        engine.close()
         pluginManager.close()
         database.close()
         super.onTerminate()

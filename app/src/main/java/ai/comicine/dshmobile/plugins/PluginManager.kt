@@ -7,7 +7,15 @@ import ai.comicine.dshmobile.R
 import ai.comicine.dshmobile.data.PluginDao
 import ai.comicine.dshmobile.data.PluginEntity
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -17,6 +25,7 @@ import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 data class PluginTool(
     val pluginId: String,
@@ -31,6 +40,49 @@ data class PluginToolResult(
     val additionalContexts: List<String>,
 )
 
+data class OriginalAgentInfo(
+    val sessionId: String,
+    val restored: Boolean,
+    val status: String,
+)
+
+sealed interface OriginalAgentEvent {
+    val sessionId: String
+
+    data class SessionEvent(
+        override val sessionId: String,
+        val eventType: String,
+        val eventJson: String,
+    ) : OriginalAgentEvent
+
+    data class AssistantFrame(
+        override val sessionId: String,
+        val frameJson: String,
+    ) : OriginalAgentEvent
+
+    data class ApprovalRequested(
+        override val sessionId: String,
+        val requestId: String,
+        val toolName: String,
+        val callId: String?,
+        val reason: String?,
+        val displayReasonJson: String?,
+        val argumentsJson: String,
+    ) : OriginalAgentEvent
+
+    data class ApprovalResolved(
+        override val sessionId: String,
+        val requestId: String,
+        val outcome: String,
+    ) : OriginalAgentEvent
+
+    data class StepLimitReached(
+        override val sessionId: String,
+        val step: Int,
+        val limit: Int,
+    ) : OriginalAgentEvent
+}
+
 class PluginCompatibilityException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
 /** Manages original npm packages using the unmodified Cordis Loader contract in the embedded Node runtime. */
@@ -39,9 +91,14 @@ class PluginManager(context: Context, private val dao: PluginDao) : AutoCloseabl
     private val localizedContext = ContextCompat.getContextForLanguage(app)
     private val runtime = EmbeddedNodeRuntime(app)
     private val root = runtime.pluginsRoot
+    val pluginsRoot: File get() = root
     private val stateMutex = Mutex()
+    private val agentMutexes = ConcurrentHashMap<String, Mutex>()
+    private val pendingOriginalApprovals = ConcurrentHashMap<String, String>()
+    private val _originalAgentEvents = MutableSharedFlow<OriginalAgentEvent>(replay = 64, extraBufferCapacity = 256)
     private var restoredRuntimeState = false
     val plugins: Flow<List<PluginEntity>> = dao.observeAll()
+    val originalAgentEvents: SharedFlow<OriginalAgentEvent> = _originalAgentEvents.asSharedFlow()
 
     suspend fun install(specifier: String): PluginEntity = withContext(Dispatchers.IO) {
         val metadata = invokeHost("installPackage", specifier.trim(), "", "")
@@ -197,6 +254,144 @@ class PluginManager(context: Context, private val dao: PluginDao) : AutoCloseabl
         invokeHost("sessionEvents", sessionId)
     }
 
+    /** Converts an existing Room transcript to a local upstream Session seed exactly once. */
+    suspend fun importLegacySession(
+        sessionId: String,
+        provider: String,
+        model: String,
+        messagesJson: String,
+    ): Boolean = withContext(Dispatchers.IO) {
+        val input = File(app.cacheDir, "dsh-session-migration-${UUID.randomUUID()}.json")
+        try {
+            input.writeText(messagesJson, Charsets.UTF_8)
+            JSONObject(invokeAgentHost(
+                "importLegacySessionFile",
+                sessionId,
+                input.absolutePath,
+                provider,
+                model,
+                timeoutMs = EmbeddedNodeRuntime.DEFAULT_TIMEOUT_MS,
+            )).optBoolean("imported")
+        } finally {
+            input.delete()
+        }
+    }
+
+    suspend fun createOrRestoreOriginalAgent(
+        sessionId: String,
+        provider: String,
+        model: String,
+        baseURL: String,
+        configurationJson: String = "{}",
+    ): OriginalAgentInfo = withContext(Dispatchers.IO) {
+        require(sessionId.isNotBlank()) { "Session id is required" }
+        require(provider.isNotBlank()) { "Provider id is required" }
+        require(model.isNotBlank()) { "Model id is required" }
+        require(baseURL.isNotBlank()) { "Messages base URL is required" }
+        restoreEnabledPluginsLocked()
+        val result = JSONObject(invokeAgentHost(
+            "createOrRestoreAgent",
+            sessionId,
+            provider,
+            model,
+            baseURL,
+            configurationJson,
+            timeoutMs = EmbeddedNodeRuntime.DEFAULT_TIMEOUT_MS,
+        ))
+        OriginalAgentInfo(
+            sessionId = result.getString("sessionId"),
+            restored = result.getBoolean("restored"),
+            status = result.getString("status"),
+        )
+    }
+
+    /** Submits one real upstream user message and returns the original Session event array after idle. */
+    suspend fun submitUserMessageAndAwaitIdle(
+        sessionId: String,
+        text: String,
+        provider: String,
+        model: String,
+        baseURL: String,
+        apiKey: String,
+        configurationJson: String = "{}",
+    ): String = withContext(Dispatchers.IO) {
+        require(text.isNotBlank()) { "User message is required" }
+        require(apiKey.isNotBlank()) { "DeepSeek API key is required" }
+        require(provider.isNotBlank()) { "Provider id is required" }
+        require(model.isNotBlank()) { "Model id is required" }
+        require(baseURL.isNotBlank()) { "Messages base URL is required" }
+        restoreEnabledPluginsLocked()
+        val sessionMutex = agentMutexes.getOrPut(sessionId) { Mutex() }
+        sessionMutex.withLock {
+            invokeAgentHost(
+                "createOrRestoreAgent",
+                sessionId,
+                provider,
+                model,
+                baseURL,
+                configurationJson,
+                timeoutMs = EmbeddedNodeRuntime.DEFAULT_TIMEOUT_MS,
+            )
+            var started = false
+            try {
+                started = true
+                runtime.callWithSensitiveArgument(
+                    operation = "submitUserMessage",
+                    arguments = listOf(sessionId, text, apiKey, provider, model, baseURL, configurationJson),
+                    sensitiveArgumentIndex = 2,
+                    timeoutMs = AGENT_CONTROL_TIMEOUT_MS,
+                )
+                awaitOriginalAgentIdle(sessionId)
+                invokeAgentHost("sessionEvents", sessionId)
+            } catch (cancelled: CancellationException) {
+                if (started) {
+                    withContext(NonCancellable + Dispatchers.IO) {
+                        runCatching { invokeAgentHost("cancelAgent", sessionId) }
+                        runCatching { awaitOriginalAgentIdle(sessionId) }
+                    }
+                }
+                throw cancelled
+            } catch (error: Exception) {
+                if (started) {
+                    withContext(NonCancellable + Dispatchers.IO) {
+                        runCatching { invokeAgentHost("cancelAgent", sessionId) }
+                        runCatching { awaitOriginalAgentIdle(sessionId) }
+                    }
+                }
+                val detail = (error.message ?: error.javaClass.simpleName).replace(apiKey, "[REDACTED]")
+                throw PluginCompatibilityException("Original Agent submission failed: $detail", error)
+            }
+        }
+    }
+
+    suspend fun readOriginalSessionEvents(sessionId: String): String = withContext(Dispatchers.IO) {
+        invokeAgentHost("sessionEvents", sessionId, timeoutMs = EmbeddedNodeRuntime.DEFAULT_TIMEOUT_MS)
+    }
+
+    suspend fun cancelOriginalAgent(sessionId: String) = withContext(Dispatchers.IO) {
+        invokeAgentHost("cancelAgent", sessionId)
+        awaitOriginalAgentIdle(sessionId)
+    }
+
+    /** Resolves one original dsh-user-approval request; false is a default-deny decision. */
+    suspend fun resolveOriginalApproval(requestId: String, allow: Boolean) = withContext(Dispatchers.IO) {
+        require(requestId.isNotBlank()) { "Approval request id is required" }
+        val sessionId = pendingOriginalApprovals[requestId]
+            ?: throw PluginCompatibilityException("The original approval request is no longer pending")
+        val outcome = if (allow) "allowed-once" else "rejected"
+        val result = JSONObject(invokeAgentHost("resolveApproval", requestId, outcome))
+        if (!result.optBoolean("resolved")) {
+            pendingOriginalApprovals.remove(requestId, sessionId)
+            throw PluginCompatibilityException("The original approval request is no longer pending")
+        }
+    }
+
+    suspend fun releaseOriginalAgent(sessionId: String) = withContext(Dispatchers.IO) {
+        runCatching { cancelOriginalAgent(sessionId) }
+        invokeAgentHost("releaseAgent", sessionId)
+        agentMutexes.remove(sessionId)
+    }
+
     suspend fun deleteSessionData(sessionId: String) = withContext(Dispatchers.IO) {
         invokeHost("deleteSessionData", sessionId)
     }
@@ -204,11 +399,85 @@ class PluginManager(context: Context, private val dao: PluginDao) : AutoCloseabl
     private suspend fun restoreEnabledPluginsLocked() = stateMutex.withLock {
         if (restoredRuntimeState) return@withLock
         val enabled = dao.observeAll().first().filter { it.enabled }
-        if (enabled.isNotEmpty()) {
-            invokeHost("schemas", enabled.first().id)
-            for (plugin in enabled) invokeHost("activate", plugin.packageName, plugin.configJson)
-        }
+        for (plugin in enabled) invokeHost("activate", plugin.packageName, plugin.configJson)
         restoredRuntimeState = true
+    }
+
+    private suspend fun awaitOriginalAgentIdle(sessionId: String) {
+        while (true) {
+            currentCoroutineContext().ensureActive()
+            val state = JSONObject(invokeAgentHost("agentRunState", sessionId))
+            emitOriginalAgentEvents(sessionId, state.optJSONArray("events") ?: JSONArray())
+            if (state.optBoolean("eventOverflow")) {
+                throw PluginCompatibilityException("Original Agent event stream exceeded its local buffer")
+            }
+            when (state.optString("status")) {
+                "running" -> delay(AGENT_POLL_INTERVAL_MS)
+                "failed" -> throw PluginCompatibilityException(
+                    state.optString("error").ifBlank { "Original AgentLoop failed" },
+                )
+                else -> return
+            }
+        }
+    }
+
+    private suspend fun emitOriginalAgentEvents(sessionId: String, events: JSONArray) {
+        for (index in 0 until events.length()) {
+            val event = events.optJSONObject(index) ?: continue
+            when (event.optString("kind")) {
+                "session" -> {
+                    val raw = event.optJSONObject("event") ?: continue
+                    _originalAgentEvents.emit(
+                        OriginalAgentEvent.SessionEvent(
+                            sessionId = sessionId,
+                            eventType = event.optString("eventType"),
+                            eventJson = raw.toString(),
+                        ),
+                    )
+                }
+                "assistant-stream" -> {
+                    val frame = event.optJSONObject("frame") ?: continue
+                    _originalAgentEvents.emit(OriginalAgentEvent.AssistantFrame(sessionId, frame.toString()))
+                }
+                "approval-request" -> {
+                    val requestId = event.optString("requestId")
+                    if (requestId.isBlank()) continue
+                    pendingOriginalApprovals[requestId] = sessionId
+                    _originalAgentEvents.emit(
+                        OriginalAgentEvent.ApprovalRequested(
+                            sessionId = sessionId,
+                            requestId = requestId,
+                            toolName = event.optString("toolName"),
+                            callId = event.optString("callId").takeIf(String::isNotBlank),
+                            reason = event.optString("reason").takeIf(String::isNotBlank),
+                            displayReasonJson = event.optJSONObject("displayReason")?.toString(),
+                            argumentsJson = event.optString("argumentsJson", "{}"),
+                        ),
+                    )
+                }
+                "approval-resolved" -> {
+                    val requestId = event.optString("requestId")
+                    if (requestId.isBlank()) continue
+                    pendingOriginalApprovals.remove(requestId, sessionId)
+                    _originalAgentEvents.emit(
+                        OriginalAgentEvent.ApprovalResolved(
+                            sessionId = sessionId,
+                            requestId = requestId,
+                            outcome = event.optString("outcome", "unavailable"),
+                        ),
+                    )
+                }
+                "step-limit" -> {
+                    _originalAgentEvents.emit(
+                        OriginalAgentEvent.StepLimitReached(
+                            sessionId = sessionId,
+                            step = event.optInt("step"),
+                            limit = event.optInt("limit"),
+                        ),
+                    )
+                }
+            }
+        }
     }
 
     private suspend fun storeInstalledPackage(metadata: JSONObject): PluginEntity {
@@ -240,10 +509,28 @@ class PluginManager(context: Context, private val dao: PluginDao) : AutoCloseabl
         throw PluginCompatibilityException(error.message ?: error.javaClass.simpleName, error)
     }
 
+    private suspend fun invokeAgentHost(
+        operation: String,
+        vararg arguments: String,
+        timeoutMs: Long = AGENT_CONTROL_TIMEOUT_MS,
+    ): String = try {
+        runtime.callNonCancellable(operation, *arguments, timeoutMs = timeoutMs)
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
+        val detail = error.message ?: error.javaClass.simpleName
+        throw PluginCompatibilityException("Cordis host operation '$operation' failed: $detail", error)
+    }
+
     override fun close() = runtime.close()
 
     private fun packageKey(packageName: String): String = MessageDigest.getInstance("SHA-256")
         .digest(packageName.toByteArray(Charsets.UTF_8))
         .take(12)
         .joinToString("") { "%02x".format(it) }
+
+    private companion object {
+        const val AGENT_CONTROL_TIMEOUT_MS = 30_000L
+        const val AGENT_POLL_INTERVAL_MS = 40L
+    }
 }

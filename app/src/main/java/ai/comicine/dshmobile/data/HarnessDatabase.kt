@@ -9,6 +9,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.Transaction
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
@@ -47,11 +48,20 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE sessionId = :sessionId ORDER BY sequence")
     suspend fun listForSession(sessionId: String): List<MessageEntity>
 
+    @Query("SELECT * FROM messages WHERE id = :id LIMIT 1")
+    suspend fun getById(id: String): MessageEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun put(message: MessageEntity)
 
     @Update
     suspend fun update(message: MessageEntity)
+
+    @Transaction
+    suspend fun upsertById(message: MessageEntity) {
+        val existing = getById(message.id)
+        if (existing == null) put(message) else update(message.copy(sequence = existing.sequence))
+    }
 
     @Query("UPDATE messages SET content = :content, thinking = :thinking, toolCallsJson = :toolCallsJson, status = :status WHERE id = :id")
     suspend fun updateAssistant(id: String, content: String, thinking: String, toolCallsJson: String, status: String)

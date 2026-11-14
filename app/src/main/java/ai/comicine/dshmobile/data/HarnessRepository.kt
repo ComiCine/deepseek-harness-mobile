@@ -26,10 +26,13 @@ class HarnessRepository(private val database: HarnessDatabase, context: Context)
     fun messages(sessionId: String) = database.messages().observeForSession(sessionId)
     suspend fun messagesNow(sessionId: String) = database.messages().listForSession(sessionId)
     suspend fun saveMessage(message: MessageEntity) = database.messages().put(message)
+    suspend fun upsertMessage(message: MessageEntity) = database.messages().upsertById(message)
     suspend fun updateMessage(message: MessageEntity) = database.messages().update(message)
     suspend fun updateAssistant(id: String, content: String, thinking: String, toolCallsJson: String, status: String) =
         database.messages().updateAssistant(id, content, thinking, toolCallsJson, status)
     suspend fun setSessionState(id: String, state: String) = database.sessions().setState(id, state, System.currentTimeMillis())
+    suspend fun setSessionRoute(id: String, provider: String, model: String) =
+        database.sessions().setRoute(id, provider, model)
     suspend fun appendLog(sessionId: String, kind: String, summary: String, details: String = "") =
         database.logs().append(ExecutionLogEntity(sessionId = sessionId, kind = kind, summary = summary, details = details, createdAt = System.currentTimeMillis()))
     suspend fun rename(id: String, title: String) = database.sessions().rename(id, title, System.currentTimeMillis())

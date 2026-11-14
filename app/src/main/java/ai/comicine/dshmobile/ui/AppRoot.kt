@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Web
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -63,6 +64,7 @@ private val destinations = listOf(
     Destination("sessions", R.string.nav_sessions, Icons.Default.History),
     Destination("workspace", R.string.nav_workspace, Icons.Default.FolderOpen),
     Destination("plugins", R.string.nav_plugins, Icons.Default.Extension),
+    Destination("plugin-ui", R.string.nav_plugin_ui, Icons.Default.Web),
     Destination("logs", R.string.nav_logs, Icons.Default.BugReport),
     Destination("settings", R.string.nav_settings, Icons.Default.Settings),
 )
@@ -76,6 +78,7 @@ fun HarnessApp(viewModel: HarnessViewModel) {
     val approvals by viewModel.approvals.collectAsState()
     val notice by viewModel.notice.collectAsState()
     var destination by rememberSaveable { mutableStateOf("chat") }
+    var focusedUiPlugin by rememberSaveable { mutableStateOf<String?>(null) }
     val snackbar = remember { SnackbarHostState() }
 
     val importSession = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
@@ -170,7 +173,11 @@ fun HarnessApp(viewModel: HarnessViewModel) {
                         viewModel.setWorkspaceExportPath(path)
                         exportWorkspace.launch(path.substringAfterLast('/'))
                     }
-                    "plugins" -> PluginsScreen(viewModel)
+                    "plugins" -> PluginsScreen(viewModel) { packageName ->
+                        focusedUiPlugin = packageName
+                        destination = "plugin-ui"
+                    }
+                    "plugin-ui" -> PluginUiScreen(viewModel, focusedUiPlugin)
                     "logs" -> LogsScreen(viewModel, selectedSession, sessions)
                     else -> SettingsScreen(viewModel)
                 }

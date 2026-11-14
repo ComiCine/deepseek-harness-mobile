@@ -38,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -48,6 +49,9 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -57,6 +61,8 @@ import ai.comicine.dshmobile.R
 import ai.comicine.dshmobile.data.MessageEntity
 import ai.comicine.dshmobile.data.SessionEntity
 import org.json.JSONArray
+
+internal const val CHAT_PROMPT_TEST_TAG = "chat-prompt-editor"
 
 @Composable
 fun ChatScreen(viewModel: HarnessViewModel, sessionId: String?, sessions: List<SessionEntity>) {
@@ -69,7 +75,8 @@ fun ChatScreen(viewModel: HarnessViewModel, sessionId: String?, sessions: List<S
     val liveBySession by viewModel.liveAssistants.collectAsState()
     val live = liveBySession[sessionId]
     val running = session.executionState == "running" || session.executionState == "queued"
-    var prompt by rememberSaveable(sessionId) { mutableStateOf("") }
+    var prompt by rememberSaveable(sessionId, stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue("")) }
+    var promptRevision by rememberSaveable(sessionId) { mutableIntStateOf(0) }
     val listState = rememberLazyListState()
 
     LaunchedEffect(messages.size, live?.text?.length, live?.thinking?.length) {
@@ -117,28 +124,65 @@ fun ChatScreen(viewModel: HarnessViewModel, sessionId: String?, sessions: List<S
         }
 
         Surface(tonalElevation = 2.dp) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.Bottom,
-            ) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+                ChatPluginInputActivities(
+                    viewModel = viewModel,
+                    sessionId = sessionId,
+                    draft = prompt.text,
+                    revision = promptRevision,
+                    locked = running,
+                    onInsert = { text, start, end, revision, pluginSessionId ->
+                        if (pluginSessionId != sessionId || running || revision != promptRevision
+                            || start !in 0..prompt.text.length || end !in start..prompt.text.length) {
+                            false
+                        } else {
+                            val inserted = prompt.text.substring(0, start) + text + prompt.text.substring(end)
+                            prompt = TextFieldValue(inserted, TextRange(start + text.length))
+                            promptRevision++
+                            true
+                        }
+                    },
+                    onSetDraft = { text, pluginSessionId ->
+                        if (pluginSessionId != sessionId || running) false
+                        else {
+                            prompt = TextFieldValue(text, TextRange(text.length))
+                            promptRevision++
+                            true
+                        }
+                    },
+                    onSubmit = {
+                        val submitted = prompt.text
+                        if (submitted.isNotBlank() && !running) {
+                            prompt = TextFieldValue("")
+                            promptRevision++
+                            viewModel.send(submitted)
+                        }
+                    },
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.Bottom,
+                ) {
                 OutlinedTextField(
                     value = prompt,
-                    onValueChange = { prompt = it },
-                    modifier = Modifier.weight(1f),
+                    onValueChange = { prompt = it; promptRevision++ },
+                    modifier = Modifier.weight(1f).testTag(CHAT_PROMPT_TEST_TAG),
                     placeholder = { Text(stringResource(R.string.chat_prompt_placeholder)) },
                     maxLines = 6,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
                     keyboardActions = KeyboardActions.Default,
                 )
                 IconButton(
-                    enabled = prompt.isNotBlank() && !running,
+                    enabled = prompt.text.isNotBlank() && !running,
                     onClick = {
-                        val submitted = prompt
-                        prompt = ""
+                        val submitted = prompt.text
+                        prompt = TextFieldValue("")
+                        promptRevision++
                         viewModel.send(submitted)
                     },
                 ) {
                     Icon(Icons.Default.Send, stringResource(R.string.action_send_message))
+                }
                 }
             }
         }

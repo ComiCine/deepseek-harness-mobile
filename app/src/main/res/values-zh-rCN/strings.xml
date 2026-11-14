@@ -4,6 +4,8 @@
     <string name="nav_sessions">会话</string>
     <string name="nav_workspace">工作区</string>
     <string name="nav_plugins">插件</string>
+    <string name="nav_plugin_ui">插件界面</string>
+    <string name="action_open_plugin_ui">打开界面</string>
     <string name="nav_logs">日志</string>
     <string name="nav_settings">设置</string>
 
@@ -112,6 +114,8 @@
     <string name="plugins_security_warning">插件代码在应用进程内运行，并可访问应用文件和网络。请只安装并启用你信任的包。</string>
     <string name="plugins_empty_title">尚未安装插件</string>
     <string name="plugins_empty_message">新安装的插件默认停用。停用或卸载时，原版 Cordis Loader 会执行生命周期清理。</string>
+    <string name="plugin_ui_description">已启用的上游浏览器插件会在 Android WebView 本机运行，加载原始客户端代码包。</string>
+    <string name="plugin_ui_empty">启用带浏览器界面的已安装插件后，可在这里查看其界面。</string>
     <string name="action_edit_plugin_config">编辑插件配置</string>
     <string name="action_uninstall_plugin">卸载插件</string>
     <string name="plugin_original_runtime_label">原版包 · Cordis Loader · Node.js</string>
@@ -223,6 +227,8 @@
     <string name="engine_log_execute_tool">执行工具 %1$s</string>
     <string name="engine_log_waiting_approval">等待用户批准 %1$s</string>
     <string name="engine_log_approval_failed">本机 Agent 无法应用此审批决定。</string>
+    <string name="engine_log_original_event">原版 Harness 事件：%1$s</string>
+    <string name="engine_log_step_limit_reached">已达到设置的模型步骤上限（%1$d）。</string>
     <string name="tool_result_not_run">未执行：本轮已达到设置的 Agent 步数上限。</string>
 
     <string name="provider_error_request_too_large">当前对话最后一轮超过本机请求内存上限；请开始新会话或缩短输入。</string>

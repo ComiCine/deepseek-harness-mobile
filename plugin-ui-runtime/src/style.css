@@ -1,0 +1,33 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+  background: transparent;
+  color: #18181b;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { width: 100%; min-height: 100%; margin: 0; }
+
+body { background: #f4f4f5; }
+
+.plugin-frame { min-height: 100vh; padding: 12px; }
+.plugin-frame__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 auto 12px; max-width: 760px; }
+.plugin-frame__count { color: #52525b; font-size: 12px; }
+.plugin-frame__content { max-width: 760px; margin: 0 auto; }
+.plugin-frame__package { max-width: 760px; margin: 20px auto 0; padding: 16px; border: 1px solid #d4d4d8; border-radius: 14px; background: color-mix(in srgb, Canvas 96%, transparent); }
+.plugin-frame__package h2 { margin: 0 0 12px; overflow-wrap: anywhere; font-size: 16px; }
+.plugin-frame__config { margin-top: 12px; }
+.plugin-frame__status { max-width: 760px; margin: 0 auto 12px; padding: 10px 12px; border: 1px solid #f59e0b; border-radius: 12px; background: #fffbeb; color: #78350f; font-size: 12px; }
+.plugin-frame__status-row + .plugin-frame__status-row { margin-top: 8px; }
+.plugin-frame__status-row p { margin: 3px 0 0; }
+.plugin-frame__empty { max-width: 760px; margin: 24px auto; color: #71717a; text-align: center; }
+
+@media (prefers-color-scheme: dark) {
+  :root { color: #f4f4f5; }
+  body { background: #18181b; }
+  .plugin-frame__count { color: #a1a1aa; }
+  .plugin-frame__status { border-color: #854d0e; background: #292117; color: #fde68a; }
+  .plugin-frame__empty { color: #a1a1aa; }
+  .plugin-frame__package { border-color: #3f3f46; }
+}

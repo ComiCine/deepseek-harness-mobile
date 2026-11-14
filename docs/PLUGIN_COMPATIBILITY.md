@@ -43,6 +43,17 @@ This filesystem test does not establish complete compatibility. Watchers, image 
 
 `UpstreamAgentLoopInstrumentedTest.kt` separately installs unmodified `@deepseek-ai/dsh-agent-loop@0.2.2-rc.3` together with the original DeepSeek API-key provider and `credentials-local`. It composes the original Cordis LLM, Session, Session Projection, System Prompt, Tools, Native Tool Executor, Agent Registry, AgentLoop, provider, and credentials services; creates an Agent through `ctx.agents.create()`, submits a user message through `followup()`, and waits with `whenIdle()`. On the API 36 arm64 emulator it completed a full turn through a test-only loopback SSE endpoint and asserted the original Session's user, assistant, step, and turn events. The credential is a mode-0600 temporary test fixture. This test does not wire the application Keystore to Cordis, does not mount JSONL persistence, and does not mean the product's Kotlin `HarnessEngine` has been replaced by the original AgentLoop.
 
+## Original UI plugins exercised on Android
+
+The Android app runs original web-client plugin bundles in an embedded WebView served from APK assets. Plugin bundles and dependencies are loaded from the app-private npm installation through the upstream client module loader, Cordis plugin loader, React renderer, and slot contracts. The WebView is an on-device UI runtime; it does not connect to an execution server. The two `.tgz` fixtures below were packed directly from `fork/deepseek-harness/apps/web/tests/fixtures/plugins/`; their `client.js` SHA-256 digests were checked against the upstream source files.
+
+| Original upstream fixture | Installation and lifecycle exercised | UI behavior exercised |
+|---|---|---|
+| `@fixture/layout-bottom@0.0.1` | Install original tarball, activate, deactivate, uninstall, and remove its local package and Room record | Original React contribution renders in the Android plugin UI, its input is present, and its button changes and collapses the bottom slot. |
+| `@fixture/input-extension@0.0.1` | Install original tarball, activate, open its UI from the native Plugins screen, deactivate, uninstall, and remove its local package and Room record | Original `plugins.bundle.config` UI opens from the plugin manager; its `conversation.input.activity` control mounts in the native Chat screen and inserts its captured text into the native Compose draft. |
+
+The Android frame currently mounts these owners: `shell.bottom`, `shell.overlay`, `plugins.bundle.config`, `plugins.detail.actions`, `plugins.detail.badge`, and `plugins.detail.section`; the native Chat screen mounts the session-scoped `conversation.input.activity` owner. The tests above explicitly exercise the bottom slot, plugin configuration UI, and chat input insertion lifecycle. They verify real plugin code, not a Kotlin substitute or a mock UI. They do not cover every slot in the upstream client slot catalog. UI contributions whose owning surface is not mounted by the Android app are not currently visible, even when their package installs and its Cordis plugin activates. Chat input actions currently support text insertion, quote insertion, draft replacement, and submit; upstream attachment operations are not implemented.
+
 ## Plugin management behavior
 
 | Operation | Android behavior | Current boundary |
@@ -52,6 +63,7 @@ This filesystem test does not establish complete compatibility. Watchers, image 
 | Configure | Edit a JSON object; Loader update lets the upstream schema validate and reload an enabled plugin | The editor does not provide the upstream profile's YAML, JavaScript marker, or complex overlay editing interface. |
 | Resolve dependencies | npm resolves production and peer dependencies and checks lockfile integrity on-device | `ignore-scripts=true`; dependency lifecycle scripts and native builds are not run, and Android-specific dependencies may be unavailable. |
 | Execute tools | Original `ctx.tools.schemas()` and `ctx.tools.execute()` | Kotlin hosts the current Agent loop; this is not full reuse of the upstream `dsh-agent-loop`. |
+| Execute web-client UI | Original client bundle, Cordis Loader, React slot renderer, and Android-hosted UI tested with two unmodified upstream fixtures | Only the native host slots listed above are mounted; this is not the complete upstream Web/Desktop slot-owner tree. |
 | Report errors | Configuration and tool errors flow to local UI, messages, and logs | There is no separate per-plugin stdout/stderr browser or detailed plugin diagnostics page. |
 | Disable and uninstall | Original Loader performs Fiber/disposable cleanup; uninstall removes the plugin Room record and npm package | Cordis Session events remain until the user deletes the session, at which point the local deletion path destroys the Agent scope and snapshot. npm's package tree handles shared dependency removal. |
 | Update | Reinstalling a specified version can replace an installed package | No automatic update, change-review, profile rollback, or compatibility-override interface. |

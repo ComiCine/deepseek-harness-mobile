@@ -40,7 +40,7 @@ import ai.comicine.dshmobile.data.PluginEntity
 import kotlinx.coroutines.launch
 
 @Composable
-fun PluginsScreen(viewModel: HarnessViewModel) {
+fun PluginsScreen(viewModel: HarnessViewModel, onOpenUi: (String) -> Unit = {}) {
     val plugins by viewModel.plugins.collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
     var enabling by remember { mutableStateOf<PluginEntity?>(null) }
@@ -103,6 +103,11 @@ fun PluginsScreen(viewModel: HarnessViewModel) {
                             }
                             Text(stringResource(R.string.plugin_original_runtime_label), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                             Text(stringResource(R.string.plugin_fingerprint, plugin.sourceSha256.take(16)), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (plugin.manifestJson.contains("\"platform\":\"web\"")) {
+                                TextButton(onClick = { onOpenUi(plugin.packageName) }) {
+                                    Text(stringResource(R.string.action_open_plugin_ui))
+                                }
+                            }
                         }
                     }
                 }

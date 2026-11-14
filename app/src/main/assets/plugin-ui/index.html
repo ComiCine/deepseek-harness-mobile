@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <script>
+      const pendingClientBundles = [];
+      window.__ModuleLoader__ = {
+        mode: 'queue',
+        pendingQueue: pendingClientBundles,
+        load(registration) {
+          if (this.mode !== 'queue') throw new Error('Client module bootstrap is already complete');
+          pendingClientBundles.push(registration);
+        },
+      };
+    </script>
+    <title>Harness Plugin UI</title>
+    <script type="module" crossorigin src="/plugin-ui/assets/index-rKZCmkXx.js"></script>
+    <link rel="stylesheet" crossorigin href="/plugin-ui/assets/index-CpqhsZVs.css">
+  </head>
+  <body>
+    <main id="root"></main>
+  </body>
+</html>

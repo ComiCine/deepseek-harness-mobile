@@ -44,6 +44,7 @@ class HarnessViewModel(application: Application) : AndroidViewModel(application)
     val liveAssistants = app.engine.liveAssistants
     val runningSessions = app.engine.runningSessions
     val plugins = app.pluginManager.plugins
+    val pluginManager = app.pluginManager
 
     init {
         viewModelScope.launch {

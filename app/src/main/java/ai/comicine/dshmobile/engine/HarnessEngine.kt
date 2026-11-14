@@ -9,6 +9,7 @@ import ai.comicine.dshmobile.data.HarnessSettings
 import ai.comicine.dshmobile.data.MessageEntity
 import ai.comicine.dshmobile.data.SessionEntity
 import ai.comicine.dshmobile.data.SettingsStore
+import ai.comicine.dshmobile.plugins.OriginalAgentEvent
 import ai.comicine.dshmobile.plugins.PluginManager
 import ai.comicine.dshmobile.security.CredentialStore
 import kotlinx.coroutines.CancellationException
@@ -25,6 +26,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -36,6 +38,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
+import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
 data class PendingApproval(
@@ -53,6 +56,19 @@ data class LiveAssistant(
     val step: Int,
 )
 
+private data class OriginalStreamBuffer(
+    val attemptId: String,
+    val messageId: String,
+    val step: Int,
+    val text: StringBuilder = StringBuilder(),
+    val thinking: StringBuilder = StringBuilder(),
+)
+
+private data class OriginalToolCall(
+    val name: String,
+    val arguments: String,
+)
+
 class HarnessEngine(
     private val context: Context,
     private val repository: HarnessRepository,
@@ -66,6 +82,11 @@ class HarnessEngine(
     private val toolExecutor = ToolExecutor(context, pluginManager)
     private val taskMap = ConcurrentHashMap<String, Job>()
     private val approvalWaiters = ConcurrentHashMap<String, CompletableDeferred<Boolean>>()
+    private val originalApprovalIds = ConcurrentHashMap.newKeySet<String>()
+    private val resolvingOriginalApprovalIds = ConcurrentHashMap.newKeySet<String>()
+    private val originalLimitSessions = ConcurrentHashMap.newKeySet<String>()
+    private val originalStreams = ConcurrentHashMap<String, OriginalStreamBuffer>()
+    private val originalToolCalls = ConcurrentHashMap<String, ConcurrentHashMap<String, OriginalToolCall>>()
     private val limiter = Mutex()
     private val runningCount = MutableStateFlow(0)
     private val _settings = MutableStateFlow(settingsStore.load().validated(context))
@@ -79,6 +100,67 @@ class HarnessEngine(
 
     init {
         scope.launch { repository.recoverAfterProcessDeath() }
+        scope.launch {
+            pluginManager.originalAgentEvents.collect { event ->
+                when (event) {
+                    is OriginalAgentEvent.SessionEvent -> {
+                        try {
+                            projectOriginalSessionEvent(event, recordLog = true)
+                        } catch (error: Exception) {
+                            runCatching {
+                                repository.appendLog(
+                                    event.sessionId,
+                                    "session.projection.error",
+                                    localizedContext.getString(R.string.engine_log_original_event, event.eventType),
+                                    error.message ?: error.javaClass.simpleName,
+                                )
+                            }
+                        }
+                    }
+                    is OriginalAgentEvent.AssistantFrame -> handleOriginalAssistantFrame(event)
+                    is OriginalAgentEvent.StepLimitReached -> {
+                        originalLimitSessions += event.sessionId
+                        runCatching {
+                            repository.appendLog(
+                                event.sessionId,
+                                "step.limit",
+                                localizedContext.getString(R.string.engine_log_step_limit_reached, event.limit),
+                                "step=${event.step}; limit=${event.limit}",
+                            )
+                        }
+                    }
+                    is OriginalAgentEvent.ApprovalRequested -> {
+                        originalApprovalIds += event.requestId
+                        val displayReason = event.displayReasonJson?.let { raw ->
+                            runCatching {
+                                val values = JSONObject(raw)
+                                val language = localizedContext.resources.configuration.locales[0]?.language.orEmpty()
+                                values.optString(language).ifBlank { values.optString("en") }
+                            }.getOrNull()
+                        }
+                        val pending = PendingApproval(
+                            id = event.requestId,
+                            sessionId = event.sessionId,
+                            toolName = event.toolName,
+                            description = displayReason?.takeIf { it.isNotBlank() }
+                                ?: event.reason?.takeIf { it.isNotBlank() }
+                                ?: localizedContext.getString(R.string.approval_plugin_description),
+                            argumentsJson = event.argumentsJson,
+                        )
+                        _approvals.update { current -> current.filterNot { it.id == pending.id } + pending }
+                        runCatching { repository.setSessionState(event.sessionId, "waiting_approval") }
+                    }
+                    is OriginalAgentEvent.ApprovalResolved -> {
+                        originalApprovalIds.remove(event.requestId)
+                        resolvingOriginalApprovalIds.remove(event.requestId)
+                        _approvals.update { current -> current.filterNot { it.id == event.requestId } }
+                        if (event.outcome == "allowed-once") {
+                            runCatching { repository.setSessionState(event.sessionId, "running") }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     fun updateSettings(settings: HarnessSettings) {
@@ -102,7 +184,14 @@ class HarnessEngine(
             synchronized(taskMap) { taskMap.remove(sessionId, task) }
             _runningSessions.update { it - sessionId }
             _liveAssistants.update { it - sessionId }
-            approvals.value.filter { it.sessionId == sessionId }.forEach(::resolveApproval)
+            approvals.value.filter { it.sessionId == sessionId }.forEach { pending ->
+                if (originalApprovalIds.remove(pending.id)) {
+                    resolvingOriginalApprovalIds.remove(pending.id)
+                    _approvals.update { current -> current.filterNot { it.id == pending.id } }
+                } else {
+                    resolveApproval(pending)
+                }
+            }
         }
         task.start()
         task
@@ -117,14 +206,40 @@ class HarnessEngine(
         taskMap.keys.toList().forEach(::cancel)
     }
 
+    fun close() {
+        cancelAll()
+        scope.cancel()
+    }
+
     fun approve(id: String, allow: Boolean) {
         val pending = approvals.value.firstOrNull { it.id == id } ?: return
+        if (originalApprovalIds.contains(id)) {
+            if (!resolvingOriginalApprovalIds.add(id)) return
+            scope.launch {
+                try {
+                    pluginManager.resolveOriginalApproval(id, allow)
+                } catch (error: Exception) {
+                    resolvingOriginalApprovalIds.remove(id)
+                    originalApprovalIds.remove(id)
+                    _approvals.update { current -> current.filterNot { it.id == id } }
+                    runCatching {
+                        repository.appendLog(
+                            pending.sessionId,
+                            "approval.error",
+                            localizedContext.getString(R.string.engine_log_approval_failed),
+                            error.message ?: error.javaClass.simpleName,
+                        )
+                    }
+                }
+            }
+            return
+        }
         resolveApproval(pending, allow)
     }
 
     suspend fun newSession(): SessionEntity {
         val current = settings.value
-        return repository.createSession("deepseek-messages", current.model)
+        return repository.createSession(ORIGINAL_PROVIDER_ID, current.model)
     }
 
     fun observeMessages(sessionId: String) = repository.messages(sessionId)
@@ -165,6 +280,10 @@ class HarnessEngine(
         var activeMessageId: String? = null
         try {
             val session = repository.session(sessionId) ?: throw IllegalStateException(localizedContext.getString(R.string.error_session_not_found))
+            if (session.provider == ORIGINAL_PROVIDER_ID || session.provider == LEGACY_MESSAGES_PROVIDER_ID) {
+                runOriginalTurn(session, prompt, capturedSettings)
+                return
+            }
             repository.setSessionState(sessionId, "running")
             repository.appendLog(sessionId, "turn.start", localizedContext.getString(R.string.engine_log_turn_started))
             repository.saveMessage(MessageEntity(
@@ -297,6 +416,324 @@ class HarnessEngine(
         }
     }
 
+    private suspend fun runOriginalTurn(
+        session: SessionEntity,
+        prompt: String,
+        capturedSettings: HarnessSettings,
+    ) {
+        val sessionId = session.id
+        val apiKey = credentials.getApiKey()?.takeIf { it.isNotBlank() }
+            ?: throw ProviderException(localizedContext.getString(R.string.error_api_key_required))
+        val model = session.model.ifBlank { capturedSettings.model }
+        val route = ORIGINAL_PROVIDER_ID
+
+        repository.setSessionState(sessionId, "running")
+        repository.updateTitleIfDefault(sessionId, prompt)
+        val storedEvents = JSONArray(pluginManager.readOriginalSessionEvents(sessionId))
+        if (storedEvents.length() > 0) {
+            syncOriginalSessionSnapshot(sessionId, storedEvents.toString())
+        } else {
+            val legacyMessages = repository.messagesNow(sessionId)
+            if (legacyMessages.isNotEmpty()) {
+                pluginManager.importLegacySession(
+                    sessionId = sessionId,
+                    provider = route,
+                    model = model,
+                    messagesJson = legacyMessagesJson(legacyMessages),
+                )
+            }
+        }
+        if (session.provider != route) repository.setSessionRoute(sessionId, route, model)
+
+        val workspace = File(context.filesDir, "workspace").apply { mkdirs() }.canonicalPath
+        val agentConfiguration = JSONObject()
+            .put("reasoningEffort", capturedSettings.reasoningEffort)
+            .put("maxTokens", capturedSettings.maxTokens)
+            .put("maxAgentSteps", capturedSettings.maxAgentSteps)
+            .put("systemPrompt", capturedSettings.systemPrompt)
+            .put("cwd", workspace)
+            .toString()
+
+        pluginManager.createOrRestoreOriginalAgent(
+            sessionId = sessionId,
+            provider = route,
+            model = model,
+            baseURL = capturedSettings.baseUrl,
+            configurationJson = agentConfiguration,
+        )
+        repository.setSessionState(sessionId, "running")
+        val finalEvents = pluginManager.submitUserMessageAndAwaitIdle(
+            sessionId = sessionId,
+            text = prompt,
+            provider = route,
+            model = model,
+            baseURL = capturedSettings.baseUrl,
+            apiKey = apiKey,
+            configurationJson = agentConfiguration,
+        )
+        syncOriginalSessionSnapshot(sessionId, finalEvents)
+    }
+
+    private fun legacyMessagesJson(messages: List<MessageEntity>): String = JSONArray().apply {
+        messages.forEach { message ->
+            put(JSONObject()
+                .put("id", message.id)
+                .put("role", message.role)
+                .put("content", message.content)
+                .put("thinking", message.thinking)
+                .put("toolCallsJson", message.toolCallsJson)
+                .put("toolCallId", message.toolCallId)
+                .put("toolName", message.toolName)
+                .put("isError", message.isError)
+                .put("status", message.status)
+                .put("createdAt", message.createdAt))
+        }
+    }.toString()
+
+    private suspend fun syncOriginalSessionSnapshot(sessionId: String, serializedEvents: String) {
+        val events = JSONArray(serializedEvents)
+        for (index in 0 until events.length()) {
+            val raw = events.optJSONObject(index) ?: continue
+            projectOriginalSessionEvent(
+                OriginalAgentEvent.SessionEvent(
+                    sessionId = sessionId,
+                    eventType = raw.optString("type"),
+                    eventJson = raw.toString(),
+                ),
+                recordLog = false,
+            )
+        }
+        repository.setSessionState(sessionId, originalExecutionState(sessionId, events))
+    }
+
+    private fun originalExecutionState(sessionId: String, events: JSONArray): String {
+        var latestReason: String? = null
+        for (index in 0 until events.length()) {
+            val event = events.optJSONObject(index) ?: continue
+            if (event.optString("type") != "turn/end") continue
+            latestReason = event.optJSONObject("data")?.optJSONObject("reason")?.optString("kind")
+        }
+        return when (latestReason) {
+            "max-tokens" -> "limit"
+            "aborted" -> "cancelled"
+            "error" -> "error"
+            "interrupted" -> "interrupted"
+            "blocked" -> if (originalLimitSessions.remove(sessionId)) "limit" else "blocked"
+            else -> "idle"
+        }
+    }
+
+    private suspend fun projectOriginalSessionEvent(
+        event: OriginalAgentEvent.SessionEvent,
+        recordLog: Boolean,
+    ) {
+        val raw = JSONObject(event.eventJson)
+        val data = raw.optJSONObject("data") ?: JSONObject()
+        val eventTime = raw.optLong("time", System.currentTimeMillis())
+        val toolCalls = originalToolCalls.getOrPut(event.sessionId) { ConcurrentHashMap() }
+        var completedToolCallId: String? = null
+        when (event.eventType) {
+            "user/message" -> {
+                val role = if (data.optJSONObject("source")?.optString("kind") == "runtime-context") "context" else "user"
+                upsertOriginalMessage(event.sessionId, data, role, eventTime)
+            }
+            "assistant/message" -> {
+                val message = data.optJSONObject("message") ?: return
+                upsertOriginalMessage(event.sessionId, message, "assistant", eventTime, data.optBoolean("interrupted"))
+            }
+            "tool/result" -> {
+                val message = data.optJSONObject("message") ?: return
+                upsertOriginalMessage(event.sessionId, message, "tool", eventTime)
+                completedToolCallId = message.optString("toolCallId").ifBlank {
+                    message.optJSONObject("source")?.optString("callId").orEmpty()
+                }.takeIf { it.isNotBlank() }
+            }
+            "system/message", "developer/message" -> {
+                val message = data.optJSONObject("message") ?: return
+                upsertOriginalMessage(event.sessionId, message, "context", eventTime)
+            }
+            "tool/call" -> {
+                val callId = data.optString("callId")
+                if (callId.isNotBlank()) {
+                    toolCalls[callId] = OriginalToolCall(
+                        name = data.optString("name", "tool"),
+                        arguments = data.optString("arguments", "{}"),
+                    )
+                }
+            }
+            "turn/start" -> repository.setSessionState(event.sessionId, "running")
+            "turn/end" -> {
+                val kind = data.optJSONObject("reason")?.optString("kind")
+                val limited = kind == "blocked" && originalLimitSessions.remove(event.sessionId)
+                repository.setSessionState(
+                    event.sessionId,
+                    when {
+                        limited || kind == "max-tokens" -> "limit"
+                        kind == "aborted" -> "cancelled"
+                        kind == "error" -> "error"
+                        kind == "interrupted" -> "interrupted"
+                        kind == "blocked" -> "blocked"
+                        else -> "idle"
+                    },
+                )
+            }
+        }
+        if (recordLog) appendOriginalExecutionLog(event, raw, data)
+        completedToolCallId?.let(toolCalls::remove)
+    }
+
+    private suspend fun upsertOriginalMessage(
+        sessionId: String,
+        message: JSONObject,
+        role: String,
+        createdAt: Long,
+        interrupted: Boolean = false,
+    ) {
+        val text = StringBuilder()
+        val thinking = StringBuilder()
+        val toolCalls = JSONArray()
+        val blocks = message.optJSONArray("content") ?: JSONArray()
+        for (index in 0 until blocks.length()) {
+            val block = blocks.optJSONObject(index) ?: continue
+            when (block.optString("type")) {
+                "text" -> text.append(block.optString("text"))
+                "reasoning" -> thinking.append(block.optString("text"))
+                "tool-call" -> {
+                    val arguments = block.opt("arguments")
+                    toolCalls.put(JSONObject()
+                        .put("id", block.optString("id"))
+                        .put("name", block.optString("name"))
+                        .put("arguments", if (arguments is String) arguments else arguments?.toString() ?: "{}" ))
+                }
+                else -> {
+                    val rawText = block.optString("text")
+                    if (rawText.isNotBlank()) text.append(rawText) else text.append(block.toString())
+                }
+            }
+        }
+        val source = message.optJSONObject("source") ?: JSONObject()
+        val toolCallId = message.optString("toolCallId").ifBlank { source.optString("callId") }
+            .takeIf { it.isNotBlank() }
+        val toolName = toolCallId?.let { originalToolCalls[sessionId]?.get(it)?.name }
+            ?: message.optString("toolName").takeIf { it.isNotBlank() }
+        val messageStatus = when {
+            interrupted -> "interrupted"
+            message.optBoolean("isError") -> "error"
+            else -> "complete"
+        }
+        val id = message.optString("id").ifBlank { UUID.randomUUID().toString() }
+        repository.upsertMessage(MessageEntity(
+            id = id,
+            sessionId = sessionId,
+            role = role,
+            content = text.toString(),
+            thinking = thinking.toString(),
+            toolCallsJson = toolCalls.toString(),
+            toolCallId = toolCallId,
+            toolName = toolName,
+            isError = message.optBoolean("isError"),
+            status = messageStatus,
+            createdAt = createdAt,
+        ))
+    }
+
+    private suspend fun appendOriginalExecutionLog(
+        event: OriginalAgentEvent.SessionEvent,
+        raw: JSONObject,
+        data: JSONObject,
+    ) {
+        if (event.eventType in setOf("user/message", "system/message", "developer/message")) return
+        val details = redactOriginalSecrets(raw.toString()).take(20_000)
+        val callName = when (event.eventType) {
+            "tool/call" -> data.optString("name", "tool")
+            "tool/result" -> {
+                val message = data.optJSONObject("message")
+                val callId = message?.optString("toolCallId")
+                    ?: message?.optJSONObject("source")?.optString("callId")
+                callId?.let { originalToolCalls[event.sessionId]?.get(it)?.name } ?: "tool"
+            }
+            else -> ""
+        }
+        val summary = when (event.eventType) {
+            "turn/start" -> localizedContext.getString(R.string.engine_log_turn_started)
+            "step/start" -> localizedContext.getString(R.string.engine_log_model_step, data.optInt("step", 1))
+            "assistant/message" -> {
+                val message = data.optJSONObject("message")
+                val calls = message?.optJSONArray("content")?.let { blocks ->
+                    (0 until blocks.length()).count { blocks.optJSONObject(it)?.optString("type") == "tool-call" }
+                } ?: 0
+                if (calls == 0) localizedContext.getString(R.string.engine_log_model_completed)
+                else localizedContext.getString(R.string.engine_log_tool_count, calls)
+            }
+            "tool/call" -> localizedContext.getString(R.string.engine_log_execute_tool, callName)
+            "tool/result" -> localizedContext.getString(
+                if (data.optJSONObject("message")?.optBoolean("isError") == true) R.string.engine_log_tool_failed else R.string.engine_log_tool_completed,
+                callName,
+            )
+            "approval/asked" -> localizedContext.getString(R.string.engine_log_waiting_approval, data.optString("toolName", "plugin"))
+            "turn/end" -> when (data.optJSONObject("reason")?.optString("kind")) {
+                "error" -> localizedContext.getString(R.string.engine_log_original_event, "turn/error")
+                "aborted" -> localizedContext.getString(R.string.engine_log_turn_cancelled)
+                else -> localizedContext.getString(R.string.engine_log_turn_completed)
+            }
+            else -> localizedContext.getString(R.string.engine_log_original_event, event.eventType)
+        }
+        repository.appendLog(event.sessionId, event.eventType, summary, details)
+    }
+
+    private fun redactOriginalSecrets(value: String): String =
+        credentials.getApiKey()?.takeIf { it.isNotBlank() }?.let { value.replace(it, "[REDACTED]") } ?: value
+
+    private fun handleOriginalAssistantFrame(event: OriginalAgentEvent.AssistantFrame) {
+        val frame = runCatching { JSONObject(event.frameJson) }.getOrNull() ?: return
+        val type = frame.optString("type")
+        val attemptId = frame.optString("attemptId")
+        if (attemptId.isBlank()) return
+        when (type) {
+            "start" -> {
+                val buffer = OriginalStreamBuffer(
+                    attemptId = attemptId,
+                    messageId = "original-$attemptId",
+                    step = frame.optInt("step", 1),
+                )
+                originalStreams[event.sessionId] = buffer
+                _liveAssistants.update {
+                    it + (event.sessionId to LiveAssistant(buffer.messageId, "", "", buffer.step))
+                }
+            }
+            "chunk" -> {
+                val buffer = originalStreams[event.sessionId]
+                    ?.takeIf { it.attemptId == attemptId }
+                    ?: OriginalStreamBuffer(attemptId, "original-$attemptId", frame.optInt("step", 1)).also {
+                        originalStreams[event.sessionId] = it
+                    }
+                val chunk = frame.optJSONObject("chunk") ?: return
+                val value = chunk.optString("text")
+                synchronized(buffer) {
+                    when (chunk.optString("type")) {
+                        "text-delta" -> buffer.text.append(value)
+                        "reasoning-delta" -> buffer.thinking.append(value)
+                    }
+                    _liveAssistants.update {
+                        it + (event.sessionId to LiveAssistant(
+                            buffer.messageId,
+                            buffer.text.toString(),
+                            buffer.thinking.toString(),
+                            buffer.step,
+                        ))
+                    }
+                }
+            }
+            "end" -> {
+                val buffer = originalStreams[event.sessionId]
+                if (buffer == null || buffer.attemptId == attemptId) {
+                    if (buffer != null) originalStreams.remove(event.sessionId, buffer)
+                    _liveAssistants.update { it - event.sessionId }
+                }
+            }
+        }
+    }
+
     private fun sessionToSettings(settings: HarnessSettings, session: SessionEntity) =
         if (session.model == settings.model) settings else settings.copy(model = session.model)
 
@@ -371,5 +808,7 @@ class HarnessEngine(
 
     companion object {
         private const val STREAM_CHECKPOINT_MS = 250L
+        private const val ORIGINAL_PROVIDER_ID = "deepseek-official"
+        private const val LEGACY_MESSAGES_PROVIDER_ID = "deepseek-messages"
     }
 }

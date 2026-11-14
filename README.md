@@ -34,6 +34,12 @@ The API key is protected with Android Keystore. Requests for model inference are
 
 Newly installed plugins are disabled until you enable them. Plugin code runs in the app process and can access the app sandbox and network; install packages from sources you trust. Tool calls made through plugins are subject to the app's approval flow.
 
+## Use plugin interfaces
+
+- In **Plugins**, tap **Open UI** on an enabled plugin to open its original client interface when it provides one.
+- UI contributions for supported Harness surfaces appear in the local plugin screen or the Chat composer. Chat input extensions can act on the current native draft.
+- UI packages that require an upstream screen the Android app does not provide may install without showing that contribution. Check [Plugin Compatibility](docs/PLUGIN_COMPATIBILITY.md) for the tested interfaces and current boundaries.
+
 ## Workspace and files
 
 The **Workspace** screen manages files in the app-private workspace. Use the import button to copy a file into the workspace, open a file to preview it, and use the export or delete action for an individual item. Files are not uploaded automatically.

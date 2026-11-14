@@ -4,6 +4,8 @@
     <string name="nav_sessions">Sessions</string>
     <string name="nav_workspace">Workspace</string>
     <string name="nav_plugins">Plugins</string>
+    <string name="nav_plugin_ui">Plugin UI</string>
+    <string name="action_open_plugin_ui">Open UI</string>
     <string name="nav_logs">Logs</string>
     <string name="nav_settings">Settings</string>
 
@@ -112,6 +114,8 @@
     <string name="plugins_security_warning">Plugin code runs inside this app process and can access its files and network. Install and enable only packages you trust.</string>
     <string name="plugins_empty_title">No plugins installed</string>
     <string name="plugins_empty_message">Newly installed plugins are disabled. The original Cordis Loader handles lifecycle cleanup when a plugin is disabled or uninstalled.</string>
+    <string name="plugin_ui_description">Enabled upstream browser plugins run locally in the Android WebView with their original client bundles.</string>
+    <string name="plugin_ui_empty">Enable an installed plugin that includes a browser interface to see its UI here.</string>
     <string name="action_edit_plugin_config">Edit plugin configuration</string>
     <string name="action_uninstall_plugin">Uninstall plugin</string>
     <string name="plugin_original_runtime_label">Original package · Cordis Loader · Node.js</string>
@@ -223,6 +227,8 @@
     <string name="engine_log_execute_tool">Executing tool %1$s</string>
     <string name="engine_log_waiting_approval">Waiting for approval: %1$s</string>
     <string name="engine_log_approval_failed">The on-device Agent could not apply the approval decision.</string>
+    <string name="engine_log_original_event">Original Harness event: %1$s</string>
+    <string name="engine_log_step_limit_reached">The configured model-step limit (%1$d) was reached.</string>
     <string name="tool_result_not_run">Not run: the configured agent step limit was reached.</string>
 
     <string name="provider_error_request_too_large">The last turn exceeds the on-device request memory limit. Start a new session or shorten the input.</string>

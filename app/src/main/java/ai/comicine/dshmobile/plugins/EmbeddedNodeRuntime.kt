@@ -15,6 +15,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.InternalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
@@ -46,10 +47,39 @@ class EmbeddedNodeRuntime(context: Context) : Closeable {
     private var closed = false
 
     suspend fun call(operation: String, vararg arguments: String, timeoutMs: Long = DEFAULT_TIMEOUT_MS): String = withContext(dispatcher) {
-        val safeOperation = operation.takeIf { it.matches(Regex("[A-Za-z][A-Za-z0-9]*")) }
-            ?: throw IllegalArgumentException("Invalid Cordis bridge operation")
-        val call = "globalThis.__dshCordisHost.$safeOperation(${arguments.joinToString(",") { JSONObject.quote(it) }})"
+        val call = hostCall(operation, arguments.toList())
         runAsync("($call)", timeoutMs, currentCoroutineContext()[Job])
+    }
+
+    /** Calls a Cordis host operation while keeping one argument out of generated JavaScript source text. */
+    suspend fun callWithSensitiveArgument(
+        operation: String,
+        arguments: List<String>,
+        sensitiveArgumentIndex: Int,
+        timeoutMs: Long = DEFAULT_TIMEOUT_MS,
+    ): String = withContext(NonCancellable + dispatcher) {
+        require(sensitiveArgumentIndex in arguments.indices) { "Sensitive argument index is out of range" }
+        val active = ensureRuntime()
+        val global = active.getGlobalObject()
+        val property = "__dshSensitiveArgument"
+        try {
+            global.set(property, arguments[sensitiveArgumentIndex])
+            val call = hostCall(operation, arguments, property, sensitiveArgumentIndex)
+            runAsync("($call)", timeoutMs, null)
+        } finally {
+            runCatching { global.delete(property) }
+            global.close()
+        }
+    }
+
+    /** Runs a short control call to completion even if its caller is cancelled. */
+    suspend fun callNonCancellable(
+        operation: String,
+        vararg arguments: String,
+        timeoutMs: Long = 15_000L,
+    ): String = withContext(NonCancellable + dispatcher) {
+        val call = hostCall(operation, arguments.toList())
+        runAsync("($call)", timeoutMs, null)
     }
 
     suspend fun evaluate(expression: String): String = withContext(dispatcher) {
@@ -58,6 +88,20 @@ class EmbeddedNodeRuntime(context: Context) : Closeable {
 
     suspend fun evaluateAsync(expression: String, timeoutMs: Long = DEFAULT_TIMEOUT_MS): String = withContext(dispatcher) {
         runAsync(expression, timeoutMs, currentCoroutineContext()[Job])
+    }
+
+    private fun hostCall(
+        operation: String,
+        arguments: List<String>,
+        sensitiveProperty: String? = null,
+        sensitiveArgumentIndex: Int = -1,
+    ): String {
+        val safeOperation = operation.takeIf { it.matches(Regex("[A-Za-z][A-Za-z0-9]*")) }
+            ?: throw IllegalArgumentException("Invalid Cordis bridge operation")
+        val encoded = arguments.mapIndexed { index, value ->
+            if (index == sensitiveArgumentIndex) "globalThis.$sensitiveProperty" else JSONObject.quote(value)
+        }
+        return "globalThis.__dshCordisHost.$safeOperation(${encoded.joinToString(",")})"
     }
 
     private fun ensureRuntime(): NodeRuntime {
@@ -72,7 +116,8 @@ class EmbeddedNodeRuntime(context: Context) : Closeable {
         created.getExecutor(
             "process.chdir(${JSONObject.quote(pluginsRoot.absolutePath)});" +
                 "globalThis.__dshPluginRoot=${JSONObject.quote(pluginsRoot.absolutePath)};" +
-                "globalThis.__dshNpmRoot=${JSONObject.quote(npmRoot.absolutePath)};",
+                "globalThis.__dshNpmRoot=${JSONObject.quote(npmRoot.absolutePath)};" +
+                "globalThis.__dshMigrationRoot=${JSONObject.quote(app.cacheDir.absolutePath)};",
         ).executeVoid()
         app.assets.open("plugin-importer.mjs").use { input ->
             FileOutputStream(File(pluginsRoot, "plugin-importer.mjs")).use { output -> input.copyTo(output) }

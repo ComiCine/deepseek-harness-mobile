@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-Original ComiCine materials in this project are licensed under the GNU Affero General Public License Version 3 or any later version (AGPL-3.0-or-later). See [LICENSE](LICENSE), [ADDITIONAL_TERMS.txt](ADDITIONAL_TERMS.txt), and [COPYRIGHT.md](COPYRIGHT.md). These project terms do not replace or relicense third-party materials.
+Original ComiCine materials in this project are licensed under the GNU Affero General Public License Version 3 or any later version (AGPL-3.0-or-later). See [LICENSE](LICENSE), [ADDITIONAL_TERMS.md](ADDITIONAL_TERMS.md), and [COPYRIGHT.md](COPYRIGHT.md). These project terms do not replace or relicense third-party materials.
 
 ## DeepSeek Harness
 

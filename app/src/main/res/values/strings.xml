@@ -96,10 +96,14 @@
     <string name="action_view_additional_terms">View additional terms</string>
     <string name="action_view_copyright">View copyright</string>
     <string name="action_view_third_party_notices">View third-party notices</string>
+    <string name="action_view_upstream_license">View upstream license</string>
+    <string name="action_view_security">View security policy</string>
     <string name="dialog_license_title">GNU AGPL License</string>
     <string name="dialog_additional_terms_title">Additional Terms</string>
     <string name="dialog_copyright_title">Copyright and Licensing</string>
     <string name="dialog_third_party_notices_title">Third-Party Notices</string>
+    <string name="dialog_upstream_license_title">DeepSeek Harness MIT License</string>
+    <string name="dialog_security_title">Security Vulnerability Disclosure Policy</string>
 
     <string name="plugins_upstream_title">Original DeepSeek Harness plugins</string>
     <string name="plugins_install_instructions">Enter an npm package name and optional version, or install an original .tgz archive from the top-right menu. Dependencies are resolved by npm on this device, and plugins are loaded and executed locally by the original Cordis Loader and embedded Node.js runtime.</string>
@@ -218,6 +222,7 @@
     <string name="engine_log_turn_cancelled">Task cancelled</string>
     <string name="engine_log_execute_tool">Executing tool %1$s</string>
     <string name="engine_log_waiting_approval">Waiting for approval: %1$s</string>
+    <string name="engine_log_approval_failed">The on-device Agent could not apply the approval decision.</string>
     <string name="tool_result_not_run">Not run: the configured agent step limit was reached.</string>
 
     <string name="provider_error_request_too_large">The last turn exceeds the on-device request memory limit. Start a new session or shorten the input.</string>
@@ -279,5 +284,5 @@
     <string name="notification_channel_description">Shows when on-device Harness execution is active</string>
 
     <string name="license_text_asset">legal/LICENSE</string>
-    <string name="additional_terms_asset">legal/ADDITIONAL_TERMS.txt</string>
+    <string name="additional_terms_asset">legal/ADDITIONAL_TERMS.md</string>
 </resources>

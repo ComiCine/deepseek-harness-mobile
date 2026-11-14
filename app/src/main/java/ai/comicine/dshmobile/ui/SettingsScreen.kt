@@ -153,7 +153,7 @@ fun SettingsScreen(viewModel: HarnessViewModel) {
                 expandedLegalDocument = R.string.dialog_license_title to context.assets.open("legal/LICENSE").bufferedReader().use { it.readText() }
             }) { Text(stringResource(R.string.action_view_license)) }
             TextButton(onClick = {
-                expandedLegalDocument = R.string.dialog_additional_terms_title to context.assets.open("legal/ADDITIONAL_TERMS.txt").bufferedReader().use { it.readText() }
+                expandedLegalDocument = R.string.dialog_additional_terms_title to context.assets.open("legal/ADDITIONAL_TERMS.md").bufferedReader().use { it.readText() }
             }) { Text(stringResource(R.string.action_view_additional_terms)) }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -163,6 +163,14 @@ fun SettingsScreen(viewModel: HarnessViewModel) {
             TextButton(onClick = {
                 expandedLegalDocument = R.string.dialog_third_party_notices_title to context.assets.open("legal/THIRD_PARTY_NOTICES.md").bufferedReader().use { it.readText() }
             }) { Text(stringResource(R.string.action_view_third_party_notices)) }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = {
+                expandedLegalDocument = R.string.dialog_upstream_license_title to context.assets.open("legal/LICENSE.upstream-deepseek-harness").bufferedReader().use { it.readText() }
+            }) { Text(stringResource(R.string.action_view_upstream_license)) }
+            TextButton(onClick = {
+                expandedLegalDocument = R.string.dialog_security_title to context.assets.open("legal/SECURITY.md").bufferedReader().use { it.readText() }
+            }) { Text(stringResource(R.string.action_view_security)) }
         }
     }
 

@@ -6,7 +6,7 @@ This repository contains materials under more than one license. Read the notice 
 
 Original materials that ComiCine owns or is authorized to license are licensed under the GNU Affero General Public License, version 3 or any later version. The complete, unmodified license text is in [LICENSE](LICENSE).
 
-The separate [ADDITIONAL_TERMS.txt](ADDITIONAL_TERMS.txt) contains terms offered under Section 7 of GNU AGPL v3. Those terms apply only to materials for which the relevant rights holder is authorized to apply them and only to the extent permitted by the applicable license. They do not change the AGPL text or automatically extend to material owned by DeepSeek or other third parties.
+The separate [ADDITIONAL_TERMS.md](ADDITIONAL_TERMS.md) contains terms offered under Section 7 of GNU AGPL v3. Those terms apply only to materials for which the relevant rights holder is authorized to apply them and only to the extent permitted by the applicable license. They do not change the AGPL text or automatically extend to material owned by DeepSeek or other third parties.
 
 See [COPYRIGHT.md](COPYRIGHT.md) for the copyright and attribution notice.
 

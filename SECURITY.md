@@ -2,7 +2,7 @@
 Copyright (C) 2026-Present ComiCine
 SPDX-License-Identifier: AGPL-3.0-or-later
 Section 7 additional terms may apply where validly authorized.
-See ADDITIONAL_TERMS.txt.
+See [Additional Terms](ADDITIONAL_TERMS.md).
 -->
 
 # Security Vulnerability Disclosure Policy

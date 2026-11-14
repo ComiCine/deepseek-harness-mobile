@@ -46,4 +46,4 @@ Open **Settings → App language** to choose **System default**, **English**, or
 
 Conversations, sessions, task history, plugin settings, workspace files, and logs are stored in the app's local storage. A model provider receives the requests needed for inference. Plugins may make their own network requests when their functionality requires them.
 
-See [Licensing](LICENSING.md), [Copyright and Licensing](COPYRIGHT.md), [Security Vulnerability Disclosure Policy](SECURITY.md), [LICENSE](LICENSE), [Additional Terms](ADDITIONAL_TERMS.txt), and [Third-Party Notices](THIRD_PARTY_NOTICES.md).
+See [Licensing](LICENSING.md), [Copyright and Licensing](COPYRIGHT.md), [Security Vulnerability Disclosure Policy](SECURITY.md), [LICENSE](LICENSE), [Additional Terms](ADDITIONAL_TERMS.md), and [Third-Party Notices](THIRD_PARTY_NOTICES.md).

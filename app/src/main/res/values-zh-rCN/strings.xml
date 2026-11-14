@@ -96,10 +96,14 @@
     <string name="action_view_additional_terms">查看附加条款</string>
     <string name="action_view_copyright">查看版权声明</string>
     <string name="action_view_third_party_notices">查看第三方声明</string>
+    <string name="action_view_upstream_license">查看上游许可协议</string>
+    <string name="action_view_security">查看安全漏洞披露政策</string>
     <string name="dialog_license_title">GNU AGPL 许可协议</string>
     <string name="dialog_additional_terms_title">附加条款</string>
     <string name="dialog_copyright_title">版权与许可</string>
     <string name="dialog_third_party_notices_title">第三方声明</string>
+    <string name="dialog_upstream_license_title">DeepSeek Harness MIT 许可协议</string>
+    <string name="dialog_security_title">安全漏洞披露政策</string>
 
     <string name="plugins_upstream_title">原版 DeepSeek Harness 插件</string>
     <string name="plugins_install_instructions">输入 npm 包名和可选版本，或从右上角菜单安装原版 .tgz 包。依赖由设备内 npm 解析；插件由原版 Cordis Loader 与内嵌 Node.js 在本机加载和执行。</string>
@@ -218,6 +222,7 @@
     <string name="engine_log_turn_cancelled">任务已取消</string>
     <string name="engine_log_execute_tool">执行工具 %1$s</string>
     <string name="engine_log_waiting_approval">等待用户批准 %1$s</string>
+    <string name="engine_log_approval_failed">本机 Agent 无法应用此审批决定。</string>
     <string name="tool_result_not_run">未执行：本轮已达到设置的 Agent 步数上限。</string>
 
     <string name="provider_error_request_too_large">当前对话最后一轮超过本机请求内存上限；请开始新会话或缩短输入。</string>
@@ -279,5 +284,5 @@
     <string name="notification_channel_description">显示本机 Harness 任务的运行状态</string>
 
     <string name="license_text_asset">legal/LICENSE</string>
-    <string name="additional_terms_asset">legal/ADDITIONAL_TERMS.txt</string>
+    <string name="additional_terms_asset">legal/ADDITIONAL_TERMS.md</string>
 </resources>

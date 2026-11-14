@@ -2,6 +2,7 @@ package ai.comicine.dshmobile
 
 import android.app.Application
 import android.net.Uri
+import androidx.core.content.ContextCompat
 import androidx.room.withTransaction
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -24,6 +25,7 @@ import org.json.JSONException
 
 class HarnessViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application as HarnessApplication
+    private val localizedContext = ContextCompat.getContextForLanguage(application)
     private val _sessions = MutableStateFlow<List<SessionEntity>>(emptyList())
     val sessions: StateFlow<List<SessionEntity>> = _sessions.asStateFlow()
     private val _selectedSessionId = MutableStateFlow<String?>(null)
@@ -76,8 +78,8 @@ class HarnessViewModel(application: Application) : AndroidViewModel(application)
 
     suspend fun readWorkspaceFile(path: String): String = withContext(Dispatchers.IO) {
         val file = workspacePath(path)
-        require(file.isFile) { "不是文件" }
-        require(file.length() <= MAX_WORKSPACE_FILE_BYTES) { "文件超过 2 MiB" }
+        require(file.isFile) { localizedString(R.string.error_not_a_file) }
+        require(file.length() <= MAX_WORKSPACE_FILE_BYTES) { localizedString(R.string.error_file_too_large) }
         file.readText(Charsets.UTF_8).take(MAX_WORKSPACE_PREVIEW_CHARS)
     }
 
@@ -85,14 +87,14 @@ class HarnessViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val file = workspacePath(path)
-                require(!file.exists()) { "文件已存在" }
-                require(content.toByteArray(Charsets.UTF_8).size <= MAX_WORKSPACE_FILE_BYTES) { "文件超过 2 MiB" }
+                require(!file.exists()) { localizedString(R.string.error_file_exists) }
+                require(content.toByteArray(Charsets.UTF_8).size <= MAX_WORKSPACE_FILE_BYTES) { localizedString(R.string.error_file_too_large) }
                 file.parentFile?.mkdirs()
                 file.writeText(content, Charsets.UTF_8)
                 _workspaceRevision.value++
-                _notice.value = "已创建 ${file.name}"
+                _notice.value = localizedString(R.string.notice_file_created, file.name)
             } catch (error: Exception) {
-                _notice.value = "创建失败：${error.message ?: "未知错误"}"
+                _notice.value = localizedString(R.string.notice_create_failed, error.message ?: localizedString(R.string.error_unknown))
             }
         }
     }
@@ -101,13 +103,13 @@ class HarnessViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val file = workspacePath(path)
-                require(file != workspaceRoot()) { "不能删除工作区根目录" }
-                if (file.isDirectory) require(file.listFiles().isNullOrEmpty()) { "文件夹非空，请先删除其中内容" }
-                require(file.delete()) { "无法删除文件" }
+                require(file != workspaceRoot()) { localizedString(R.string.error_workspace_root_delete) }
+                if (file.isDirectory) require(file.listFiles().isNullOrEmpty()) { localizedString(R.string.error_folder_not_empty) }
+                require(file.delete()) { localizedString(R.string.error_file_delete_failed) }
                 _workspaceRevision.value++
-                _notice.value = "已删除 ${file.name}"
+                _notice.value = localizedString(R.string.notice_file_deleted, file.name)
             } catch (error: Exception) {
-                _notice.value = "删除失败：${error.message ?: "未知错误"}"
+                _notice.value = localizedString(R.string.notice_delete_failed, error.message ?: localizedString(R.string.error_unknown))
             }
         }
     }
@@ -119,13 +121,13 @@ class HarnessViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val file = workspacePath(path)
-                require(file.length() <= MAX_WORKSPACE_FILE_BYTES) { "文件超过 2 MiB，不能通过工作区导出" }
+                require(file.length() <= MAX_WORKSPACE_FILE_BYTES) { localizedString(R.string.error_file_export_too_large) }
                 val content = file.readBytes()
                 app.contentResolver.openOutputStream(uri)?.use { it.write(content) }
-                    ?: throw IllegalStateException("无法写入所选文件")
-                _notice.value = "工作区文件已导出"
+                    ?: throw IllegalStateException(localizedString(R.string.error_selected_file_write))
+                _notice.value = localizedString(R.string.notice_workspace_file_exported)
             } catch (error: Exception) {
-                _notice.value = "导出失败：${error.message ?: "未知错误"}"
+                _notice.value = localizedString(R.string.notice_workspace_export_failed, error.message ?: localizedString(R.string.error_unknown))
             } finally {
                 _exportWorkspacePath.value = null
             }
@@ -140,9 +142,9 @@ class HarnessViewModel(application: Application) : AndroidViewModel(application)
                     ?.substringAfterLast('/')
                     ?.takeIf { it.isNotBlank() && it != "." && it != ".." }
                     ?: "imported-file"
-                require(name.none { it == '\\' || it == '\n' || it == '\r' }) { "文件名包含不支持的字符" }
+                require(name.none { it == '\\' || it == '\n' || it == '\r' }) { localizedString(R.string.error_filename_unsupported) }
                 val output = workspacePath(name)
-                require(!output.exists()) { "工作区已存在同名文件，请先重命名或删除" }
+                require(!output.exists()) { localizedString(R.string.error_duplicate_workspace_name) }
                 val temp = File(output.parentFile, ".${output.name}.${UUID.randomUUID()}.import")
                 try {
                     app.contentResolver.openInputStream(uri)?.use { input ->
@@ -153,19 +155,19 @@ class HarnessViewModel(application: Application) : AndroidViewModel(application)
                                 val count = input.read(buffer)
                                 if (count < 0) break
                                 total += count
-                                require(total <= MAX_WORKSPACE_FILE_BYTES) { "文件超过 2 MiB" }
+                                require(total <= MAX_WORKSPACE_FILE_BYTES) { localizedString(R.string.error_file_too_large) }
                                 destination.write(buffer, 0, count)
                             }
                         }
-                    } ?: throw IllegalStateException("无法读取所选文件")
-                    require(temp.renameTo(output)) { "无法将文件写入工作区" }
+                    } ?: throw IllegalStateException(localizedString(R.string.error_selected_file_read))
+                    require(temp.renameTo(output)) { localizedString(R.string.error_workspace_write) }
                 } finally {
                     temp.delete()
                 }
                 _workspaceRevision.value++
-                _notice.value = "已导入 $name 到本机工作区"
+                _notice.value = localizedString(R.string.notice_workspace_file_imported, name)
             } catch (error: Exception) {
-                _notice.value = "导入失败：${error.message ?: "未知错误"}"
+                _notice.value = localizedString(R.string.notice_import_failed, error.message ?: localizedString(R.string.error_unknown))
             }
         }
     }
@@ -185,7 +187,7 @@ class HarnessViewModel(application: Application) : AndroidViewModel(application)
                 ExecutionService.start(app)
                 app.engine.start(sessionId, prompt)
             } catch (error: Exception) {
-                _notice.value = error.message ?: "无法启动任务"
+                _notice.value = error.message ?: localizedString(R.string.notice_task_start_failed)
             }
         }
     }
@@ -194,11 +196,11 @@ class HarnessViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             try {
                 val lastPrompt = app.repository.messagesNow(sessionId).lastOrNull { it.role == "user" }?.content
-                    ?: throw IllegalStateException("当前会话没有可重试的用户请求")
+                    ?: throw IllegalStateException(localizedString(R.string.error_no_retry_prompt))
                 ExecutionService.start(app)
                 app.engine.start(sessionId, lastPrompt)
             } catch (error: Exception) {
-                _notice.value = "重试失败：${error.message ?: "未知错误"}"
+                _notice.value = localizedString(R.string.notice_retry_failed, error.message ?: localizedString(R.string.error_unknown))
             }
         }
     }
@@ -208,16 +210,16 @@ class HarnessViewModel(application: Application) : AndroidViewModel(application)
 
     fun saveSettings(settings: HarnessSettings) {
         app.engine.updateSettings(settings)
-        _notice.value = "设置已保存在此设备"
+        _notice.value = localizedString(R.string.notice_settings_saved)
     }
 
     fun saveApiKey(key: String) {
         try {
             app.engine.setApiKey(key)
             _hasApiKey.value = app.engine.hasApiKey()
-            _notice.value = if (key.isBlank()) "已从本设备移除 API Key" else "API Key 已加密保存在 Android Keystore"
+            _notice.value = localizedString(if (key.isBlank()) R.string.notice_api_key_removed else R.string.notice_api_key_saved)
         } catch (error: Exception) {
-            _notice.value = "无法保存 API Key：${error.message ?: "Keystore error"}"
+            _notice.value = localizedString(R.string.notice_api_key_save_failed, error.message ?: localizedString(R.string.error_unknown))
         }
     }
 
@@ -230,10 +232,10 @@ class HarnessViewModel(application: Application) : AndroidViewModel(application)
             try {
                 val content = exportSession(sessionId)
                 app.contentResolver.openOutputStream(uri)?.use { it.write(content.toByteArray(Charsets.UTF_8)) }
-                    ?: throw IllegalStateException("无法写入所选文件")
-                _notice.value = "会话已导出"
+                    ?: throw IllegalStateException(localizedString(R.string.error_selected_file_write))
+                _notice.value = localizedString(R.string.notice_session_exported)
             } catch (error: Exception) {
-                _notice.value = "导出失败：${error.message ?: "未知错误"}"
+                _notice.value = localizedString(R.string.notice_session_export_failed, error.message ?: localizedString(R.string.error_unknown))
             }
         }
     }
@@ -242,24 +244,24 @@ class HarnessViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val raw = app.contentResolver.openInputStream(uri)?.use { input -> readCapped(input, MAX_IMPORT_BYTES).toString(Charsets.UTF_8) }
-                    ?: throw IllegalArgumentException("无法读取所选文件")
+                    ?: throw IllegalArgumentException(localizedString(R.string.error_selected_file_read))
                 val root = JSONObject(raw)
-                require(root.optString("format") == "deepseek-harness-mobile-session-v1") { "不支持的会话导出格式" }
+                require(root.optString("format") == "deepseek-harness-mobile-session-v1") { localizedString(R.string.error_session_export_format) }
                 val oldSession = root.getJSONObject("session")
                 val messages = root.getJSONArray("messages")
-                require(messages.length() <= MAX_IMPORT_MESSAGES) { "会话消息数量超过限制" }
+                require(messages.length() <= MAX_IMPORT_MESSAGES) { localizedString(R.string.error_session_message_count) }
                 val session = app.database.withTransaction {
                     val created = app.repository.createSession(
                         provider = oldSession.optString("provider", "deepseek-messages"),
                         model = oldSession.optString("model", settings.value.model),
-                        title = oldSession.optString("title", "导入会话").take(120),
+                        title = oldSession.optString("title", localizedString(R.string.session_imported_title)).take(120),
                     )
                     for (index in 0 until messages.length()) {
                         val item = messages.getJSONObject(index)
                         val role = item.optString("role")
                         if (role !in setOf("user", "assistant", "tool")) continue
                         val content = item.optString("content")
-                        require(content.length <= 2_000_000) { "单条消息超过 2 MB" }
+                        require(content.length <= 2_000_000) { localizedString(R.string.error_session_message_size) }
                         app.repository.saveMessage(MessageEntity(
                             id = UUID.randomUUID().toString(),
                             sessionId = created.id,
@@ -277,15 +279,15 @@ class HarnessViewModel(application: Application) : AndroidViewModel(application)
                     created
                 }
                 _selectedSessionId.value = session.id
-                _notice.value = "已导入 ${messages.length()} 条记录"
+                _notice.value = localizedString(R.string.notice_session_imported, messages.length())
             } catch (error: Exception) {
-                _notice.value = "导入失败：${error.message ?: "文件格式错误"}"
+                _notice.value = localizedString(R.string.notice_import_failed, error.message ?: localizedString(R.string.error_unknown))
             }
         }
     }
 
     fun renameSession(session: SessionEntity, title: String) {
-        viewModelScope.launch { app.repository.rename(session.id, title.trim().take(120).ifBlank { "未命名会话" }) }
+        viewModelScope.launch { app.repository.rename(session.id, title.trim().take(120).ifBlank { localizedString(R.string.session_untitled_title) }) }
     }
 
     fun deleteSession(session: SessionEntity) {
@@ -296,7 +298,7 @@ class HarnessViewModel(application: Application) : AndroidViewModel(application)
                 app.repository.delete(session)
                 if (_selectedSessionId.value == session.id) _selectedSessionId.value = null
             } catch (error: Exception) {
-                _notice.value = "删除会话数据失败：${error.message ?: "未知错误"}"
+                _notice.value = localizedString(R.string.notice_session_deleted_error, error.message ?: localizedString(R.string.error_unknown))
             }
         }
     }
@@ -305,9 +307,9 @@ class HarnessViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             try {
                 val plugin = app.pluginManager.install(uri)
-                _notice.value = "已安装 ${plugin.displayName} ${plugin.version}；默认保持停用"
+                _notice.value = localizedString(R.string.notice_plugin_installed, plugin.displayName, plugin.version)
             } catch (error: Exception) {
-                _notice.value = "插件安装失败：${error.message ?: "未知错误"}"
+                _notice.value = localizedString(R.string.notice_plugin_install_failed, error.message ?: localizedString(R.string.error_unknown))
             }
         }
     }
@@ -316,9 +318,9 @@ class HarnessViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             try {
                 val plugin = app.pluginManager.install(specifier)
-                _notice.value = "已安装原版插件 ${plugin.packageName} ${plugin.version}；默认保持停用"
+                _notice.value = localizedString(R.string.notice_upstream_plugin_installed, plugin.packageName, plugin.version)
             } catch (error: Exception) {
-                _notice.value = "插件安装失败：${error.message ?: "未知错误"}"
+                _notice.value = localizedString(R.string.notice_plugin_install_failed, error.message ?: localizedString(R.string.error_unknown))
             }
         }
     }
@@ -329,6 +331,14 @@ class HarnessViewModel(application: Application) : AndroidViewModel(application)
 
     fun clearNotice() { _notice.value = null }
     fun reportNotice(message: String) { _notice.value = message }
+    fun reportLocalizedNotice(resourceId: Int, vararg formatArgs: Any) {
+        _notice.value = localizedString(resourceId, *formatArgs)
+    }
+    fun reportLocalizedFailure(resourceId: Int, error: Throwable) {
+        reportLocalizedNotice(resourceId, error.message?.takeIf { it.isNotBlank() } ?: localizedString(R.string.error_unknown))
+    }
+    fun localizedString(resourceId: Int, vararg formatArgs: Any): String =
+        localizedContext.getString(resourceId, *formatArgs)
 
     private fun workspaceRoot() = File(app.filesDir, "workspace").apply { mkdirs() }.canonicalFile
 
@@ -340,17 +350,17 @@ class HarnessViewModel(application: Application) : AndroidViewModel(application)
             val count = input.read(buffer)
             if (count < 0) break
             total += count
-            require(total <= maxBytes) { "导入文件超过 20 MiB" }
+            require(total <= maxBytes) { localizedString(R.string.error_import_file_too_large) }
             output.write(buffer, 0, count)
         }
         return output.toByteArray()
     }
 
     private fun workspacePath(relative: String): File {
-        require(relative.isNotBlank() && !File(relative).isAbsolute) { "请输入工作区内的相对路径" }
+        require(relative.isNotBlank() && !File(relative).isAbsolute) { localizedString(R.string.error_relative_path_required) }
         val root = workspaceRoot()
         val file = File(root, relative).canonicalFile
-        require(file.path == root.path || file.path.startsWith(root.path + File.separator)) { "路径不能离开本机工作区" }
+        require(file.path == root.path || file.path.startsWith(root.path + File.separator)) { localizedString(R.string.error_path_outside_workspace) }
         return file
     }
 

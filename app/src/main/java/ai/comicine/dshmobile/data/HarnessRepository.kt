@@ -1,13 +1,21 @@
 package ai.comicine.dshmobile.data
 
+import android.content.Context
+import androidx.core.content.ContextCompat
+import ai.comicine.dshmobile.R
 import kotlinx.coroutines.flow.Flow
 import java.util.UUID
 
-class HarnessRepository(private val database: HarnessDatabase) {
+class HarnessRepository(private val database: HarnessDatabase, context: Context) {
+    private val localizedContext = ContextCompat.getContextForLanguage(context.applicationContext)
     val sessions: Flow<List<SessionEntity>> = database.sessions().observeAll()
     val plugins: Flow<List<PluginEntity>> = database.plugins().observeAll()
 
-    suspend fun createSession(provider: String, model: String, title: String = "新会话"): SessionEntity {
+    suspend fun createSession(
+        provider: String,
+        model: String,
+        title: String = localizedContext.getString(R.string.session_default_title),
+    ): SessionEntity {
         val now = System.currentTimeMillis()
         return SessionEntity(UUID.randomUUID().toString(), title, provider, model, now, now).also {
             database.sessions().put(it)
@@ -34,8 +42,9 @@ class HarnessRepository(private val database: HarnessDatabase) {
 
     suspend fun updateTitleIfDefault(id: String, firstPrompt: String) {
         val existing = database.sessions().get(id) ?: return
-        if (existing.title != "新会话") return
-        val title = firstPrompt.replace(Regex("\\s+"), " ").trim().take(36).ifBlank { "新会话" }
+        val defaultTitle = localizedContext.getString(R.string.session_default_title)
+        if (existing.title != defaultTitle) return
+        val title = firstPrompt.replace(Regex("\\s+"), " ").trim().take(36).ifBlank { defaultTitle }
         database.sessions().rename(id, title, System.currentTimeMillis())
     }
 }

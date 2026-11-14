@@ -50,19 +50,21 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import ai.comicine.dshmobile.HarnessViewModel
+import ai.comicine.dshmobile.R
 import ai.comicine.dshmobile.engine.PendingApproval
 
-private data class Destination(val id: String, val title: String, val icon: androidx.compose.ui.graphics.vector.ImageVector)
+private data class Destination(val id: String, val titleRes: Int, val icon: androidx.compose.ui.graphics.vector.ImageVector)
 
 private val destinations = listOf(
-    Destination("chat", "对话", Icons.Default.Chat),
-    Destination("sessions", "会话", Icons.Default.History),
-    Destination("workspace", "工作区", Icons.Default.FolderOpen),
-    Destination("plugins", "插件", Icons.Default.Extension),
-    Destination("logs", "日志", Icons.Default.BugReport),
-    Destination("settings", "设置", Icons.Default.Settings),
+    Destination("chat", R.string.nav_chat, Icons.Default.Chat),
+    Destination("sessions", R.string.nav_sessions, Icons.Default.History),
+    Destination("workspace", R.string.nav_workspace, Icons.Default.FolderOpen),
+    Destination("plugins", R.string.nav_plugins, Icons.Default.Extension),
+    Destination("logs", R.string.nav_logs, Icons.Default.BugReport),
+    Destination("settings", R.string.nav_settings, Icons.Default.Settings),
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -104,26 +106,26 @@ fun HarnessApp(viewModel: HarnessViewModel) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(destinations.first { it.id == destination }.title) },
+                title = { Text(stringResource(destinations.first { it.id == destination }.titleRes)) },
                 actions = {
                     when (destination) {
                         "chat" -> {
-                            IconButton(onClick = { viewModel.newSession() }) { Icon(Icons.Default.Add, "新建会话") }
+                            IconButton(onClick = { viewModel.newSession() }) { Icon(Icons.Default.Add, stringResource(R.string.action_new_session)) }
                             if (selectedSession != null) IconButton(onClick = { exportSession.launch("harness-session.json") }) {
-                                Icon(Icons.Default.FileDownload, "导出会话")
+                                Icon(Icons.Default.FileDownload, stringResource(R.string.action_export_session))
                             }
                         }
                         "sessions" -> {
-                            IconButton(onClick = { viewModel.newSession { destination = "chat" } }) { Icon(Icons.Default.Add, "新建会话") }
+                            IconButton(onClick = { viewModel.newSession { destination = "chat" } }) { Icon(Icons.Default.Add, stringResource(R.string.action_new_session)) }
                             IconButton(onClick = { importSession.launch(arrayOf("application/json", "text/json")) }) {
-                                Icon(Icons.Default.FileUpload, "导入会话 JSON")
+                                Icon(Icons.Default.FileUpload, stringResource(R.string.action_import_session))
                             }
                         }
                         "plugins" -> IconButton(onClick = { installPlugin.launch(arrayOf("application/gzip", "application/x-gzip", "application/octet-stream")) }) {
-                            Icon(Icons.Default.Add, "安装原版 npm 插件 .tgz 包")
+                            Icon(Icons.Default.Add, stringResource(R.string.action_install_plugin_archive))
                         }
                         "workspace" -> IconButton(onClick = { importWorkspace.launch(arrayOf("*/*")) }) {
-                            Icon(Icons.Default.FileUpload, "导入文件到工作区")
+                            Icon(Icons.Default.FileUpload, stringResource(R.string.action_import_workspace_file))
                         }
                     }
                 },
@@ -135,8 +137,8 @@ fun HarnessApp(viewModel: HarnessViewModel) {
                     NavigationBarItem(
                         selected = destination == item.id,
                         onClick = { destination = item.id },
-                        icon = { Icon(item.icon, contentDescription = item.title) },
-                        label = { Text(item.title) },
+                        icon = { Icon(item.icon, contentDescription = stringResource(item.titleRes)) },
+                        label = { Text(stringResource(item.titleRes)) },
                     )
                 }
             }
@@ -150,8 +152,8 @@ fun HarnessApp(viewModel: HarnessViewModel) {
                         NavigationRailItem(
                             selected = destination == item.id,
                             onClick = { destination = item.id },
-                            icon = { Icon(item.icon, contentDescription = item.title) },
-                            label = { Text(item.title) },
+                            icon = { Icon(item.icon, contentDescription = stringResource(item.titleRes)) },
+                            label = { Text(stringResource(item.titleRes)) },
                             alwaysShowLabel = true,
                         )
                     }
@@ -185,17 +187,17 @@ fun HarnessApp(viewModel: HarnessViewModel) {
 private fun ApprovalDialog(approval: PendingApproval, onApprove: () -> Unit, onDeny: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDeny,
-        title = { Text("批准本次工具调用？") },
+        title = { Text(stringResource(R.string.approval_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("工具：${approval.toolName}")
+                Text(stringResource(R.string.approval_tool_name, approval.toolName))
                 Text(approval.description)
                 SelectionContainer {
                     Text(approval.argumentsJson, modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp).verticalScroll(rememberScrollState()))
                 }
             }
         },
-        confirmButton = { Button(onClick = onApprove) { Text("批准并执行一次") } },
-        dismissButton = { TextButton(onClick = onDeny) { Text("拒绝") } },
+        confirmButton = { Button(onClick = onApprove) { Text(stringResource(R.string.action_approve_once)) } },
+        dismissButton = { TextButton(onClick = onDeny) { Text(stringResource(R.string.action_deny)) } },
     )
 }

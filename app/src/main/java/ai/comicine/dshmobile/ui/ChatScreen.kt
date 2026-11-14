@@ -49,9 +49,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ai.comicine.dshmobile.HarnessViewModel
+import ai.comicine.dshmobile.R
 import ai.comicine.dshmobile.data.MessageEntity
 import ai.comicine.dshmobile.data.SessionEntity
 import org.json.JSONArray
@@ -79,12 +81,16 @@ fun ChatScreen(viewModel: HarnessViewModel, sessionId: String?, sessions: List<S
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(session.title, style = MaterialTheme.typography.titleMedium, maxLines = 1)
-                Text("${session.provider} · ${session.model} · ${session.executionState}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    stringResource(R.string.session_metadata, session.provider, session.model, executionStateLabel(session.executionState)),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             if (running) {
-                IconButton(onClick = { viewModel.cancel(sessionId) }) { Icon(Icons.Default.Stop, "取消当前任务") }
+                IconButton(onClick = { viewModel.cancel(sessionId) }) { Icon(Icons.Default.Stop, stringResource(R.string.action_cancel_current_task)) }
             } else if (session.executionState in setOf("error", "cancelled", "interrupted")) {
-                TextButton(onClick = { viewModel.retryLastTurn(sessionId) }) { Text("重试上次任务") }
+                TextButton(onClick = { viewModel.retryLastTurn(sessionId) }) { Text(stringResource(R.string.action_retry_last_task)) }
             }
         }
         HorizontalDivider()
@@ -119,7 +125,7 @@ fun ChatScreen(viewModel: HarnessViewModel, sessionId: String?, sessions: List<S
                     value = prompt,
                     onValueChange = { prompt = it },
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text("给 DeepSeek 一个任务…") },
+                    placeholder = { Text(stringResource(R.string.chat_prompt_placeholder)) },
                     maxLines = 6,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
                     keyboardActions = KeyboardActions.Default,
@@ -132,7 +138,7 @@ fun ChatScreen(viewModel: HarnessViewModel, sessionId: String?, sessions: List<S
                         viewModel.send(submitted)
                     },
                 ) {
-                    Icon(Icons.Default.Send, "发送消息")
+                    Icon(Icons.Default.Send, stringResource(R.string.action_send_message))
                 }
             }
         }
@@ -146,11 +152,11 @@ private fun EmptyChat(viewModel: HarnessViewModel) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("本机 Harness", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+        Text(stringResource(R.string.chat_empty_title), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(8.dp))
-        Text("会话、工具和插件都在此 Android 设备执行。模型推理通过你配置的 DeepSeek API。", textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(stringResource(R.string.chat_empty_message), textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(20.dp))
-        AssistChip(onClick = { viewModel.newSession() }, label = { Text("新建会话") })
+        AssistChip(onClick = { viewModel.newSession() }, label = { Text(stringResource(R.string.action_new_session)) })
     }
 }
 
@@ -167,10 +173,10 @@ private fun MessageCard(message: MessageEntity, content: String, thinking: Strin
         ) {
             Column(Modifier.padding(horizontal = 14.dp, vertical = 11.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 val label = when (message.role) {
-                    "user" -> "你"
-                    "context" -> "插件补充上下文"
-                    "tool" -> "工具 · ${message.toolName ?: "结果"}"
-                    else -> "DeepSeek${if (message.status == "streaming") " · 正在生成" else ""}"
+                    "user" -> stringResource(R.string.message_role_user)
+                    "context" -> stringResource(R.string.message_role_plugin_context)
+                    "tool" -> stringResource(R.string.message_role_tool, message.toolName ?: stringResource(R.string.message_role_tool_result))
+                    else -> stringResource(R.string.message_role_assistant) + if (message.status == "streaming") " · ${stringResource(R.string.status_generating)}" else ""
                 }
                 Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (content.isNotBlank()) {
@@ -180,14 +186,14 @@ private fun MessageCard(message: MessageEntity, content: String, thinking: Strin
                 } else if (message.status == "streaming") {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                        Text("正在连接模型…", style = MaterialTheme.typography.bodySmall)
+                        Text(stringResource(R.string.status_connecting_model), style = MaterialTheme.typography.bodySmall)
                     }
                 }
                 if (thinking.isNotBlank()) ThinkingSection(thinking)
                 ToolCallsSection(message.toolCallsJson)
                 if (message.status in setOf("error", "interrupted")) {
                     Text(
-                        if (message.status == "error") "请求出错。可在日志中查看详情。" else "任务在进程停止时中断。",
+                        stringResource(if (message.status == "error") R.string.error_request_failed else R.string.error_task_interrupted),
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.labelSmall,
                     )
@@ -204,7 +210,7 @@ private fun ThinkingSection(content: String) {
         modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("思考过程 ${if (expanded) "▲" else "▼"}", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
+        Text(stringResource(R.string.thinking_process, if (expanded) "▲" else "▼"), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
     }
     if (expanded) SelectionContainer { Text(content, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
 }
@@ -217,7 +223,7 @@ private fun ToolCallsSection(raw: String) {
         val name = call.optString("name", "tool")
         val args = call.optString("arguments", "{}")
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("工具调用 · $name", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.tertiary)
+            Text(stringResource(R.string.tool_call_label, name), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.tertiary)
             SelectionContainer {
                 Text(args, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }

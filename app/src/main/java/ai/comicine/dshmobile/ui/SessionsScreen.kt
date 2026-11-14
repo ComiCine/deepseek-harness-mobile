@@ -26,8 +26,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import ai.comicine.dshmobile.HarnessViewModel
+import ai.comicine.dshmobile.R
 import ai.comicine.dshmobile.data.SessionEntity
 import java.text.DateFormat
 import java.util.Date
@@ -39,8 +41,8 @@ fun SessionsScreen(viewModel: HarnessViewModel, sessions: List<SessionEntity>, o
 
     if (sessions.isEmpty()) {
         Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("还没有会话", style = MaterialTheme.typography.titleLarge)
-            Text("新建会话后，对话和执行记录会保存在本机。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.sessions_empty_title), style = MaterialTheme.typography.titleLarge)
+            Text(stringResource(R.string.sessions_empty_message), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     } else {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -49,11 +51,11 @@ fun SessionsScreen(viewModel: HarnessViewModel, sessions: List<SessionEntity>, o
                     Row(Modifier.fillMaxWidth().padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Text(session.title, style = MaterialTheme.typography.titleMedium, maxLines = 1)
-                            Text("${session.model} · ${session.executionState}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("${session.model} · ${executionStateLabel(session.executionState)}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text(DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(session.updatedAt)), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        IconButton(onClick = { renaming = session }) { Icon(Icons.Default.Edit, "重命名会话") }
-                        IconButton(onClick = { deleting = session }) { Icon(Icons.Default.Delete, "删除会话") }
+                        IconButton(onClick = { renaming = session }) { Icon(Icons.Default.Edit, stringResource(R.string.action_rename_session)) }
+                        IconButton(onClick = { deleting = session }) { Icon(Icons.Default.Delete, stringResource(R.string.action_delete)) }
                     }
                 }
             }
@@ -64,21 +66,21 @@ fun SessionsScreen(viewModel: HarnessViewModel, sessions: List<SessionEntity>, o
         var title by remember(session.id) { mutableStateOf(session.title) }
         AlertDialog(
             onDismissRequest = { renaming = null },
-            title = { Text("重命名会话") },
-            text = { OutlinedTextField(title, { title = it }, label = { Text("名称") }, singleLine = true) },
+            title = { Text(stringResource(R.string.dialog_rename_session)) },
+            text = { OutlinedTextField(title, { title = it }, label = { Text(stringResource(R.string.field_name)) }, singleLine = true) },
             confirmButton = {
-                TextButton(onClick = { viewModel.renameSession(session, title); renaming = null }) { Text("保存") }
+                TextButton(onClick = { viewModel.renameSession(session, title); renaming = null }) { Text(stringResource(R.string.action_save)) }
             },
-            dismissButton = { TextButton(onClick = { renaming = null }) { Text("取消") } },
+            dismissButton = { TextButton(onClick = { renaming = null }) { Text(stringResource(R.string.action_cancel)) } },
         )
     }
     deleting?.let { session ->
         AlertDialog(
             onDismissRequest = { deleting = null },
-            title = { Text("删除会话？") },
-            text = { Text("“${session.title}”及其本地消息和执行日志会被删除。") },
-            confirmButton = { TextButton(onClick = { viewModel.deleteSession(session); deleting = null }) { Text("删除") } },
-            dismissButton = { TextButton(onClick = { deleting = null }) { Text("取消") } },
+            title = { Text(stringResource(R.string.dialog_delete_session_title)) },
+            text = { Text(stringResource(R.string.dialog_delete_session_message, session.title)) },
+            confirmButton = { TextButton(onClick = { viewModel.deleteSession(session); deleting = null }) { Text(stringResource(R.string.action_delete)) } },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text(stringResource(R.string.action_cancel)) } },
         )
     }
 }

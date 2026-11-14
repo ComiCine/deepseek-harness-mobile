@@ -1,41 +1,41 @@
-# Android 平台限制与功能缺口
+# Android Platform Constraints
 
-本项目把 Harness 与插件执行留在设备本地；下列缺口不会通过服务器或 SSH 执行绕开。
+Harness and plugin execution remain on the Android device. The compatibility gaps listed here are platform and implementation boundaries; they are not routed to a server or SSH host.
 
-## 原版 Harness 功能缺口
+## Upstream Harness capabilities
 
-- 原版 Cordis ESM 插件运行路径已实现，并由两个真实上游包在 Android 36 arm64 模拟器验证；**完整上游 `web`/`desktop` base profile、全部插件包和全部 DSH services 尚未移植或验证**。需依赖未装配 service 的插件会报真实加载/执行错误。
-- Kotlin 承载当前模型 Agent 循环；没有完整复用上游 `dsh-agent-loop`、profile/bundle 构建器、全部 hooks 和 provider-neutral model layer。
-- 目前主要使用 DeepSeek Messages API adapter；多 provider profile、OAuth/account 插件、模型目录和全部上游 provider 行为没有完整移植验证。
-- subagents、Agent Teams、workflow/PTC、MCP transports/resources、web search/fetch、skills/persona、goals/plans、持久 jobs/schedule 尚未完整实现。
-- 文件/工作区工具限于 app 私有目录与 SAF 单文件导入/导出；缺少上游广泛文件系统 adapter、完整 JSONL session 格式迁移、附件、图像、Office、desktop GUI 和 Computer Use 能力。
-- 会话导出格式是 Android 应用格式，不兼容上游所有 versioned JSONL Session data；尚无 Room schema migration 和数据清理策略。
-- 原生 UI 是 Android Compose 实现，不包含完整 Web/Desktop UI、市场、profile editor、命令面板和所有上游配置页面。
+- The original Cordis ESM plugin path is implemented and has been exercised with two real upstream packages on an Android 36 arm64 emulator. The complete upstream `web`/`desktop` base profile, all plugin packages, and all DSH services are not assembled. A plugin that requires an unavailable service can report its actual loader or execution error.
+- Kotlin currently hosts the Agent model loop. The app does not fully reuse the upstream `dsh-agent-loop`, profile/bundle builder, all hooks, or provider-neutral model layer.
+- The primary provider integration is a DeepSeek Messages adapter. Multi-provider profiles, OAuth/account plugins, model catalog, and all upstream provider behaviors are not available as a complete set.
+- Subagents, Agent Teams, workflows/PTC, MCP transports/resources, web search/fetch, skills/personas, goals/plans, and persistent jobs/schedules are not implemented as full upstream feature sets.
+- File/workspace tools use app-private storage and SAF single-file import/export. The full upstream filesystem adapter, JSONL session-format migration, attachments, images, Office, desktop GUI, and Computer Use integrations are absent.
+- Session export uses the Android app's format and does not implement every upstream versioned JSONL format. Room schema migration and data-cleanup behavior require additional implementation.
+- The Android UI is native Compose and does not include every upstream Web/Desktop screen, plugin market, profile editor, command palette, or configuration page.
 
-逐项状态见[上游功能对照表](FEATURE_PARITY.md)。
+See [Feature Parity](FEATURE_PARITY.md) for the complete source inventory.
 
-## 原版插件 runtime 限制
+## Original plugin runtime
 
-- 已验证范围仅为 `dsh-repeat-tool-reminder@0.2.2-rc.3` 和 `dsh-tool-todo@0.2.2-rc.3`，在 Android 36 arm64-v8a 模拟器通过真实 npm/Cordis/Node 路径运行。未据此宣称全部插件兼容。
-- 当前 Cordis Host 装配的是有限 DSH service 子集。依赖 MCP、subagent/team、web、skills、jobs、sandbox、credential 或未加载 service 的包需要先完成对应本地 service 移植和实际测试。
-- NPM lifecycle scripts 被禁用。需要 `preinstall`/`install`/`postinstall`、下载二进制或构建步骤的依赖可能安装失败或运行不完整。
-- 原生扩展必须匹配 Android 的 arm64-v8a/x86_64、Bionic、NDK 和嵌入式 Node ABI。桌面 native addon 不会自动兼容；目前没有提供桌面 ABI 转译层。
-- 插件运行在 Android 应用同一个进程和 UID 中。没有独立插件进程、Node builtin capability 过滤、文件路径权限代理、内存 quota 或 native crash containment。Javet watchdog 会在 bridge operation 超时后终止 V8 execution；它不限制内存膨胀，native crash 仍可结束整个应用。
-- 插件配置编辑目前面向 JSON object，未重现原 profile 对 YAML、Loader JS 标记及复杂 overlay 的完整编辑能力。
-- 已运行模拟器为 Android 36 arm64。真机低内存/后台行为、x86_64 原生 runtime、其他 Android 版本、长时间任务与系统杀进程压力仍待测。
+- The device-tested packages are `dsh-repeat-tool-reminder@0.2.2-rc.3` and `dsh-tool-todo@0.2.2-rc.3` on an Android 36 arm64 emulator using real npm, Cordis, and Node execution.
+- The Cordis host assembles a subset of DSH services. Packages that require unassembled MCP, subagent/team, web, skills, jobs, sandbox, credential, or filesystem services need those local services before they can run.
+- npm lifecycle scripts are disabled. Dependencies that require `preinstall`, `install`, or `postinstall`, binary downloads, or build steps may fail to install or run.
+- Native extensions must match Android `arm64-v8a` or `x86_64`, Bionic, the NDK, and the embedded Node ABI. Desktop native addons are not directly reusable; the app has no desktop ABI translation layer.
+- Plugins share the app process and UID. There is no per-plugin OS process, Node capability filter, filesystem permission proxy, memory quota, or native crash containment. Javet's watchdog can terminate a timed-out V8 execution; it does not constrain memory growth or isolate a native crash.
+- The plugin configuration editor accepts JSON objects. It does not reproduce the upstream profile's complete YAML, Loader JavaScript marker, and complex overlay editing experience.
+- Physical phones, x86_64 Android emulators, lower Android API levels, long background runs, and system memory pressure need separate device validation.
 
-## Shell、文件和系统 API
+## Shell, files, and system APIs
 
-Shell 使用 Android `/system/bin/sh`，以普通 app UID 在应用 sandbox 运行。无 root、不会使用 SSH 或伴侣电脑。系统镜像命令集因设备而异；桌面 Bash/Pwsh、PTY、Windows/macOS 专用程序、全局 `/usr` 和 GUI 不可假定存在。子进程可设置 cwd/stdin/stdout/stderr、exit code 与 timeout；Android 仍可能停止后台进程。
+Shell commands use Android `/system/bin/sh` with the app's ordinary UID inside its sandbox. The app does not require root, SSH, or a companion computer. Available commands depend on the device image; desktop Bash/PowerShell, PTY, Windows/macOS programs, global `/usr` paths, and desktop GUI tools must not be assumed. The shell adapter supports working directory, standard input/output/error, exit status, timeout, and cancellation. Android can still stop background processes.
 
-工作区默认在应用私有 `filesDir/workspace`。路径解析检查 canonical path，拒绝逃逸。SAF 支持用户授权的单文件输入/输出，未提供任意文件系统 root 挂载或持久 SAF tree provider。
+The default workspace is `filesDir/workspace`, private to the app. Canonical path checks reject traversal outside this directory. SAF supports user-authorized single-file import and export; it does not mount arbitrary filesystem roots or provide a persistent SAF tree workspace.
 
-## 生命周期与后台限制
+## Lifecycle and background execution
 
-应用用 `dataSync` Foreground Service 展示活动通知并提供取消入口；Android 版本、前台服务启动条件、时限、省电策略、用户强停和进程压力均可能打断任务。应用不承诺无限后台执行。
+A `dataSync` foreground service shows active work and a cancellation action. Android version-specific start rules, service time limits, battery policy, user force-stop, and process pressure can interrupt a task. The app does not promise unrestricted background execution.
 
-Room 保存任务和会话状态；进程死亡恢复会将未完成流记录为 interrupted，不会自动重发旧模型请求。Node 插件被应用进程一起终止；下次启动会从本地 Room 恢复启用配置，首次需要插件 schema/tool 时重建 Cordis context。instrumented test 验证过 Node runtime teardown/recreation，不等同于 Android app 强停/重启测试。
+Room stores session and task state. After process death, unfinished streams are marked interrupted; old paid model requests are not automatically resent. Node plugins are terminated with the app process. At the next launch, enabled configuration is restored locally and the Cordis context is rebuilt when plugin schemas or tools are needed. Instrumentation tests cover Node runtime teardown/recreation, not every Android app force-stop or reboot scenario.
 
-## 验证边界
+## Verification scope
 
-已执行的 Android 仪器测试记录在 [PLUGIN_COMPATIBILITY.md](PLUGIN_COMPATIBILITY.md)。这不验证真实 DeepSeek API 账户及网络响应，也不覆盖所有插件包、所有 ABI、真机电源/通知限制或 native addon。Gradle 成功只表示构建任务通过；未执行的功能保持未验证或不兼容状态。
+Executed Android instrumentation results are listed in [Plugin Compatibility](PLUGIN_COMPATIBILITY.md). Those results do not cover a live DeepSeek account and network response, every plugin package, all ABIs, physical-device power/notification behavior, or native addons. A successful Gradle build establishes that build tasks completed; it does not establish runtime compatibility for paths that were not exercised.

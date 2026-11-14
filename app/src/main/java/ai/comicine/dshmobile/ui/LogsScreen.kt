@@ -16,8 +16,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import ai.comicine.dshmobile.HarnessViewModel
+import ai.comicine.dshmobile.R
 import ai.comicine.dshmobile.data.SessionEntity
 import java.text.DateFormat
 import java.util.Date
@@ -27,8 +29,8 @@ fun LogsScreen(viewModel: HarnessViewModel, selectedId: String?, sessions: List<
     val sessionId = selectedId ?: sessions.firstOrNull()?.id
     if (sessionId == null) {
         Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center) {
-            Text("还没有执行日志", style = MaterialTheme.typography.titleMedium)
-            Text("工具调用、模型请求、审批、错误和取消状态会在这里按会话记录。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.logs_empty_title), style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.logs_empty_message), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         return
     }
@@ -38,7 +40,7 @@ fun LogsScreen(viewModel: HarnessViewModel, selectedId: String?, sessions: List<
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(log.kind, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                        Text(executionLogKindLabel(log.kind), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                         Text(DateFormat.getTimeInstance(DateFormat.MEDIUM).format(Date(log.createdAt)), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Text(log.summary, style = MaterialTheme.typography.bodyMedium)

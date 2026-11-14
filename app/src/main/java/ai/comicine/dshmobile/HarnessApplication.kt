@@ -22,7 +22,7 @@ class HarnessApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         database = HarnessDatabase.open(this)
-        repository = HarnessRepository(database)
+        repository = HarnessRepository(database, this)
         credentialStore = CredentialStore(this)
         pluginManager = PluginManager(this, database.plugins())
         engine = HarnessEngine(this, repository, credentialStore, pluginManager)

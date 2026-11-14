@@ -37,8 +37,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import ai.comicine.dshmobile.HarnessViewModel
+import ai.comicine.dshmobile.R
 import ai.comicine.dshmobile.WorkspaceEntry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -59,25 +61,27 @@ fun WorkspaceScreen(viewModel: HarnessViewModel, onExport: (String) -> Unit) {
     }
     LaunchedEffect(previewPath) {
         val selected = previewPath ?: return@LaunchedEffect
-        preview = runCatching { viewModel.readWorkspaceFile(selected) }.getOrElse { "读取失败：${it.message}" }
+        preview = runCatching { viewModel.readWorkspaceFile(selected) }.getOrElse {
+            viewModel.localizedString(R.string.notice_workspace_read_failed, it.message ?: viewModel.localizedString(R.string.error_unknown))
+        }
     }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
         Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             if (path.isNotEmpty()) IconButton(onClick = { path = path.substringBeforeLast('/', "") }) {
-                Icon(Icons.Default.ArrowBack, "返回上一级")
+                Icon(Icons.Default.ArrowBack, stringResource(R.string.action_go_to_parent))
             }
             Column(Modifier.weight(1f)) {
-                Text(if (path.isEmpty()) "本机工作区" else path, style = MaterialTheme.typography.titleMedium)
-                Text("应用私有目录；文件不会自动上传。", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(if (path.isEmpty()) stringResource(R.string.workspace_default_title) else path, style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.workspace_private_notice), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            IconButton(onClick = { createDialog = true }) { Icon(Icons.Default.NoteAdd, "新建文件") }
+            IconButton(onClick = { createDialog = true }) { Icon(Icons.Default.NoteAdd, stringResource(R.string.action_create_workspace_file)) }
         }
 
         if (entries.isEmpty()) {
             Column(Modifier.fillMaxSize().padding(20.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("此文件夹为空", style = MaterialTheme.typography.titleMedium)
-                Text("可导入文件，或让 Agent 创建文件。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(R.string.workspace_empty_title), style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.workspace_empty_message), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
             LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -90,10 +94,10 @@ fun WorkspaceScreen(viewModel: HarnessViewModel, onExport: (String) -> Unit) {
                             Icon(if (entry.isDirectory) Icons.Default.Folder else Icons.Default.InsertDriveFile, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                             Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
                                 Text(entry.name, style = MaterialTheme.typography.bodyLarge)
-                                Text(if (entry.isDirectory) "文件夹" else formatBytes(entry.sizeBytes), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(if (entry.isDirectory) stringResource(R.string.label_folder) else formatBytes(entry.sizeBytes), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            if (!entry.isDirectory) IconButton(onClick = { onExport(entry.relativePath) }) { Icon(Icons.Default.Download, "导出 ${entry.name}") }
-                            IconButton(onClick = { deletePath = entry.relativePath }) { Icon(Icons.Default.Delete, "删除 ${entry.name}") }
+                            if (!entry.isDirectory) IconButton(onClick = { onExport(entry.relativePath) }) { Icon(Icons.Default.Download, stringResource(R.string.action_export_named, entry.name)) }
+                            IconButton(onClick = { deletePath = entry.relativePath }) { Icon(Icons.Default.Delete, stringResource(R.string.action_delete_named, entry.name)) }
                         }
                     }
                 }
@@ -105,8 +109,8 @@ fun WorkspaceScreen(viewModel: HarnessViewModel, onExport: (String) -> Unit) {
         var name by remember { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { createDialog = false },
-            title = { Text("新建工作区文件") },
-            text = { OutlinedTextField(name, { name = it }, label = { Text("相对路径") }, singleLine = true) },
+            title = { Text(stringResource(R.string.dialog_new_workspace_file)) },
+            text = { OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.field_relative_path)) }, singleLine = true) },
             confirmButton = {
                 Button(onClick = {
                     if (name.isNotBlank()) {
@@ -115,9 +119,9 @@ fun WorkspaceScreen(viewModel: HarnessViewModel, onExport: (String) -> Unit) {
                         refresh++
                     }
                     createDialog = false
-                }) { Text("创建") }
+                }) { Text(stringResource(R.string.action_create)) }
             },
-            dismissButton = { TextButton(onClick = { createDialog = false }) { Text("取消") } },
+            dismissButton = { TextButton(onClick = { createDialog = false }) { Text(stringResource(R.string.action_cancel)) } },
         )
     }
     previewPath?.let { selected ->
@@ -125,17 +129,17 @@ fun WorkspaceScreen(viewModel: HarnessViewModel, onExport: (String) -> Unit) {
             onDismissRequest = { previewPath = null },
             title = { Text(selected.substringAfterLast('/')) },
             text = { SelectionContainer { Text(preview, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall) } },
-            confirmButton = { TextButton(onClick = { previewPath = null }) { Text("关闭") } },
-            dismissButton = { TextButton(onClick = { onExport(selected); previewPath = null }) { Text("导出") } },
+            confirmButton = { TextButton(onClick = { previewPath = null }) { Text(stringResource(R.string.action_close)) } },
+            dismissButton = { TextButton(onClick = { onExport(selected); previewPath = null }) { Text(stringResource(R.string.action_export)) } },
         )
     }
     deletePath?.let { selected ->
         AlertDialog(
             onDismissRequest = { deletePath = null },
-            title = { Text("删除工作区项目？") },
-            text = { Text("$selected 将从应用私有工作区删除。") },
-            confirmButton = { TextButton(onClick = { viewModel.deleteWorkspaceEntry(selected); deletePath = null; refresh++ }) { Text("删除") } },
-            dismissButton = { TextButton(onClick = { deletePath = null }) { Text("取消") } },
+            title = { Text(stringResource(R.string.dialog_delete_workspace_title)) },
+            text = { Text(stringResource(R.string.dialog_delete_workspace_message, selected)) },
+            confirmButton = { TextButton(onClick = { viewModel.deleteWorkspaceEntry(selected); deletePath = null; refresh++ }) { Text(stringResource(R.string.action_delete)) } },
+            dismissButton = { TextButton(onClick = { deletePath = null }) { Text(stringResource(R.string.action_cancel)) } },
         )
     }
 }

@@ -2,6 +2,8 @@ package ai.comicine.dshmobile.plugins
 
 import android.content.Context
 import android.net.Uri
+import androidx.core.content.ContextCompat
+import ai.comicine.dshmobile.R
 import ai.comicine.dshmobile.data.PluginDao
 import ai.comicine.dshmobile.data.PluginEntity
 import kotlinx.coroutines.Dispatchers
@@ -34,6 +36,7 @@ class PluginCompatibilityException(message: String, cause: Throwable? = null) : 
 /** Manages original npm packages using the unmodified Cordis Loader contract in the embedded Node runtime. */
 class PluginManager(context: Context, private val dao: PluginDao) : AutoCloseable {
     private val app = context.applicationContext
+    private val localizedContext = ContextCompat.getContextForLanguage(app)
     private val runtime = EmbeddedNodeRuntime(app)
     private val root = runtime.pluginsRoot
     private val stateMutex = Mutex()
@@ -51,11 +54,11 @@ class PluginManager(context: Context, private val dao: PluginDao) : AutoCloseabl
         var backup: File? = null
         try {
             val packageName = app.contentResolver.openInputStream(uri)?.use(EmbeddedNodeRuntime::packageNameFromTarball)
-                ?: throw PluginCompatibilityException("无法读取所选 npm 插件包")
+                ?: throw PluginCompatibilityException(localizedContext.getString(R.string.plugin_error_read_package))
             archive = File(root, "packages/${packageKey(packageName)}.tgz")
             backup = if (archive.isFile) File(root, "packages/.${UUID.randomUUID()}.backup.tgz").also { archive.copyTo(it, overwrite = true) } else null
             app.contentResolver.openInputStream(uri)?.use { input -> temporary.outputStream().buffered().use { input.copyTo(it) } }
-                ?: throw PluginCompatibilityException("无法读取所选 npm 插件包")
+                ?: throw PluginCompatibilityException(localizedContext.getString(R.string.plugin_error_read_package))
             if (archive.exists()) archive.delete()
             temporary.renameTo(archive)
             val metadata = invokeHost("installPackage", packageName, archive.absolutePath, packageName)
@@ -64,7 +67,13 @@ class PluginManager(context: Context, private val dao: PluginDao) : AutoCloseabl
             archive?.delete()
             backup?.let { if (it.exists()) it.renameTo(archive!!) }
             if (error is PluginCompatibilityException) throw error
-            throw PluginCompatibilityException("原版 npm 插件安装失败：${error.message ?: error.javaClass.simpleName}", error)
+            if (error is PluginPackageException) {
+                throw PluginCompatibilityException(localizedContext.getString(error.messageResourceId), error)
+            }
+            throw PluginCompatibilityException(
+                localizedContext.getString(R.string.plugin_error_install, error.message ?: error.javaClass.simpleName),
+                error,
+            )
         } finally {
             temporary.delete()
             backup?.delete()
@@ -76,21 +85,21 @@ class PluginManager(context: Context, private val dao: PluginDao) : AutoCloseabl
     }
 
     suspend fun enable(id: String, enabled: Boolean) = withContext(Dispatchers.IO) {
-        val plugin = dao.get(id) ?: throw PluginCompatibilityException("插件未安装")
+        val plugin = dao.get(id) ?: throw PluginCompatibilityException(localizedContext.getString(R.string.plugin_error_not_installed))
         restoreEnabledPluginsLocked()
         if (enabled) {
             try {
                 invokeHost("activate", plugin.packageName, plugin.configJson)
                 dao.setEnabled(id, true, "[]")
             } catch (error: Exception) {
-                throw PluginCompatibilityException("Cordis 启用失败：${error.message ?: error.javaClass.simpleName}", error)
+                throw PluginCompatibilityException(localizedContext.getString(R.string.plugin_error_activate, error.message ?: error.javaClass.simpleName), error)
             }
         } else {
             try {
                 invokeHost("deactivate", plugin.packageName)
                 dao.setEnabled(id, false, "[]")
             } catch (error: Exception) {
-                throw PluginCompatibilityException("Cordis 停用失败：${error.message ?: error.javaClass.simpleName}", error)
+                throw PluginCompatibilityException(localizedContext.getString(R.string.plugin_error_deactivate, error.message ?: error.javaClass.simpleName), error)
             }
         }
     }
@@ -105,15 +114,15 @@ class PluginManager(context: Context, private val dao: PluginDao) : AutoCloseabl
             dao.delete(plugin)
             File(root, "packages/${packageKey(plugin.packageName)}.tgz").delete()
         } catch (error: Exception) {
-            throw PluginCompatibilityException("原版插件卸载失败：${error.message ?: error.javaClass.simpleName}", error)
+            throw PluginCompatibilityException(localizedContext.getString(R.string.plugin_error_uninstall, error.message ?: error.javaClass.simpleName), error)
         }
     }
 
     suspend fun setConfiguration(id: String, json: String) = withContext(Dispatchers.IO) {
-        require(json.toByteArray(Charsets.UTF_8).size <= 64 * 1024) { "插件配置最多 64 KiB" }
+        require(json.toByteArray(Charsets.UTF_8).size <= 64 * 1024) { localizedContext.getString(R.string.plugin_error_config_size) }
         val config = try { JSONObject(json).toString() }
-        catch (error: Exception) { throw PluginCompatibilityException("Cordis 插件配置必须是 JSON object", error) }
-        val plugin = dao.get(id) ?: throw PluginCompatibilityException("插件未安装")
+        catch (error: Exception) { throw PluginCompatibilityException(localizedContext.getString(R.string.plugin_error_config_object), error) }
+        val plugin = dao.get(id) ?: throw PluginCompatibilityException(localizedContext.getString(R.string.plugin_error_not_installed))
         restoreEnabledPluginsLocked()
         if (plugin.enabled) {
             try {
@@ -121,7 +130,7 @@ class PluginManager(context: Context, private val dao: PluginDao) : AutoCloseabl
                 dao.setConfig(id, config)
             } catch (error: Exception) {
                 runCatching { invokeHost("updateConfig", plugin.packageName, plugin.configJson) }
-                throw PluginCompatibilityException("Cordis 配置校验或重载失败：${error.message ?: error.javaClass.simpleName}", error)
+                throw PluginCompatibilityException(localizedContext.getString(R.string.plugin_error_config_update, error.message ?: error.javaClass.simpleName), error)
             }
         } else {
             dao.setConfig(id, config)
@@ -146,9 +155,9 @@ class PluginManager(context: Context, private val dao: PluginDao) : AutoCloseabl
     suspend fun invoke(sessionId: String, callId: String, toolName: String, argumentsJson: String): PluginToolResult {
         restoreEnabledPluginsLocked()
         val raw = JSONObject(invokeHost("executeTool", sessionId, callId, toolName, argumentsJson))
-        val rows = raw.optJSONArray("results") ?: throw PluginCompatibilityException("Upstream ToolsService omitted the tool result")
+        val rows = raw.optJSONArray("results") ?: throw PluginCompatibilityException(localizedContext.getString(R.string.plugin_error_missing_tool_result))
         val result = rows.optJSONObject(0)?.optJSONObject("result")
-            ?: throw PluginCompatibilityException("Upstream ToolsService returned an empty batch")
+            ?: throw PluginCompatibilityException(localizedContext.getString(R.string.plugin_error_empty_tool_batch))
         val content = result.optJSONArray("content") ?: JSONArray()
         val text = buildList {
             for (index in 0 until content.length()) {
@@ -173,7 +182,7 @@ class PluginManager(context: Context, private val dao: PluginDao) : AutoCloseabl
                 if (body.isNotBlank()) add(body)
             }
         }
-        return PluginToolResult(text.ifBlank { "(empty tool result)" }, result.optBoolean("isError"), contexts)
+        return PluginToolResult(text.ifBlank { localizedContext.getString(R.string.plugin_error_empty_result) }, result.optBoolean("isError"), contexts)
     }
 
     suspend fun beforeStep(sessionId: String, hasUserMessage: Boolean) {

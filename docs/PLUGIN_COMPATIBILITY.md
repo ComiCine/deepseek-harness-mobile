@@ -1,58 +1,55 @@
-# 原版 DeepSeek Harness 插件兼容性
+# Original DeepSeek Harness Plugin Compatibility
 
-## 兼容目标
+## Compatibility target
 
-Android 插件页接收原版 npm 包名/版本或原版 `.tgz`。安装的是上游发布包本身：保留其 ESM 文件、`package.json`、peer/dependency 声明与 Cordis plugin export，不改写 plugin source、manifest、接口或内部实现，也不以 Kotlin 重写插件能力。运行时由设备内 npm、Javet Node Android、原版 Cordis 和 `@deepseek-ai/cordis-plugin-loader` 承载。
+The Android plugin screen accepts an original npm package name/version or original `.tgz` archive. The installed package retains its upstream ESM files, `package.json`, dependency declarations, and Cordis plugin export. The app does not rewrite plugin source, manifests, interfaces, or internal implementations, and does not substitute Kotlin plugin implementations. The runtime uses on-device npm, Javet Node Android, original Cordis, and `@deepseek-ai/cordis-plugin-loader`.
 
-不兼容的包会在安装依赖、Cordis 配置/启用或工具执行阶段显示真实错误。npm 包成功安装只证明包管理器取得代码，不代表它依赖的 DSH service、桌面命令或 native addon 已在 Android 提供。
+An incompatible package reports its actual dependency-installation, Cordis configuration/activation, or tool-execution error. A successful npm installation only means npm acquired the package; it does not provide DSH services, desktop commands, or native addons that the package may require.
 
-## Android 运行桥接
+## Android runtime bridge
 
-1. 嵌入式 Node.js 运行在 Android app 进程中；Node runtime 和 NPM 归应用本地管理，无需外部 Node 安装或终端应用。
-2. NPM 将原版包与依赖解析到 app 私有 `filesDir/plugins/`；registry 安装使用 npm registry，`.tgz` 则从 SAF 选取后在本机安装。
-3. Cordis Host 创建原版 Cordis context，加载原版 Cordis Loader，并把 Loader 的内部模块 import seam 接到 Node module loader。插件代码以其原始 ESM package 入口加载。
-4. 插件的 `apply(ctx, config)`、Cordis 配置校验、作用域/Fiber、`ctx.tools` schema 和工具执行都交给上游实现。启停/卸载使用 Loader 的原生 update/remove 生命周期。
-5. Kotlin Harness 适配模型循环与 Android UI；插件 tool-call 仍通过 `ctx.tools.execute()` 进入原版工具管线。Cordis Session event 快照本机落盘，恢复 Node runtime 后从原始事件数据重新建立 Session。
+1. Embedded Node.js runs inside the Android app process. Node and npm are managed by the app; users do not need to install a terminal or Node runtime.
+2. npm resolves original packages and dependencies into the app-private `filesDir/plugins/` tree. Registry installs use the npm registry; `.tgz` archives are selected with SAF and installed locally.
+3. The Cordis host creates the original Cordis context and loads the original Cordis Loader. The Loader's internal module import seam is connected to Node's module loader, and plugins load from their original ESM package entry points.
+4. Original `apply(ctx, config)`, Cordis configuration validation, scopes/Fibers, `ctx.tools` schemas, and tool execution use upstream implementations. Enable, disable, and uninstall use Loader lifecycle operations.
+5. Kotlin adapts the model loop and Android UI. Plugin tool calls still use `ctx.tools.execute()`. Cordis Session event snapshots are persisted locally and restore the original session event data after Node runtime recreation.
 
-当前装配的 DSH service 集合有限：Node 包目录安装了 `@deepseek-ai/dsh-agent`、`dsh-llm`、`dsh-scope`、`dsh-session`、`dsh-session-projection`、`dsh-system-prompt`、`dsh-tools`、`dsh-tool-executor-native`、`dsh-user-approval`、`dsh-typert-protocol`、`dsh-util-values`、`dsh-workspace` 等同版本依赖；Cordis context 当前显式加载 Agent、System Prompt、Tools、Native Tool Executor 和 Session Projection 插件。它不是上游 `web`/`desktop` profile 的完整 bundle tree。依赖 MCP、subagent/team、web、skills、jobs、sandbox、credential、filesystem 等未装配服务的插件可能无法启用或运行。
+The assembled DSH service set is limited. The npm tree includes same-version dependencies such as `@deepseek-ai/dsh-agent`, `dsh-llm`, `dsh-scope`, `dsh-session`, `dsh-session-projection`, `dsh-system-prompt`, `dsh-tools`, `dsh-tool-executor-native`, `dsh-user-approval`, `dsh-typert-protocol`, `dsh-util-values`, and `dsh-workspace`. The Cordis context explicitly loads Agent, System Prompt, Tools, Native Tool Executor, and Session Projection services. It is not the complete upstream `web`/`desktop` bundle tree. Plugins requiring unassembled MCP, subagent/team, web, skills, jobs, sandbox, credential, or filesystem services can fail activation or execution.
 
-## 已在 Android 设备执行的原版插件
+## Original plugins exercised on Android
 
-以下测试由 `:app:connectedDebugAndroidTest` 在 `dsh-api36-arm64(AVD)`、Android API 36、arm64-v8a 模拟器上执行；AndroidJUnitRunner 报告 1 项测试通过。测试位置：`app/src/androidTest/java/ai/comicine/dshmobile/plugins/PluginRuntimeInstrumentedTest.kt`。
+The `:app:connectedDebugAndroidTest` instrumentation run used the `dsh-api36-arm64` Android API 36 `arm64-v8a` emulator. AndroidJUnitRunner reported one test passed. Test source: `app/src/androidTest/java/ai/comicine/dshmobile/plugins/PluginRuntimeInstrumentedTest.kt`.
 
-| 原版上游包 | 安装方式 | 已验证的真实行为 |
+| Upstream package | Installation route | Exercised behavior |
 |---|---|---|
-| `@deepseek-ai/dsh-repeat-tool-reminder@0.2.2-rc.3` | npm registry 包名和固定版本 | 原始 `type: module` manifest/ESM 入口；依赖 `@deepseek-ai/schemastery` 解析；原版 Cordis 配置设置与无效阈值拒绝；实际侦听 `tools/post-execute`；重复工具调用产生原版 additional context；停用后监听器不再触发；卸载后 npm 目录和 Room 记录删除。 |
-| `@deepseek-ai/dsh-tool-todo@0.2.2-rc.3` | 从上游发布 `.tgz` 安装 | 原始包名/version/manifest；依赖 `@deepseek-ai/schemastery` 和 `zod` 在设备本地解析；原版 Cordis config；经原版 `ctx.tools` 调用 `todo_write`，写入真实 Session `todo/write` 事件；非法的多个 `in_progress` todo 得到原版工具错误；Node runtime 关闭再创建后旧 Session event 仍恢复；卸载后 npm 目录及 Room 记录删除。 |
+| `@deepseek-ai/dsh-repeat-tool-reminder@0.2.2-rc.3` | npm registry package name and pinned version | Original `type: module` manifest and ESM entry; `@deepseek-ai/schemastery` dependency resolution; original Cordis configuration and invalid-threshold rejection; real `tools/post-execute` listener; repeated tool calls produce original additional context; disabling removes the listener; uninstall removes the npm directory and Room record. |
+| `@deepseek-ai/dsh-tool-todo@0.2.2-rc.3` | Original published `.tgz` archive | Original package name, version, manifest, and configuration; local resolution of `@deepseek-ai/schemastery` and `zod`; original `ctx.tools` call to `todo_write`; writes a real Session `todo/write` event; invalid multiple `in_progress` items produce the original tool error; recreating Node restores the existing Session event; uninstall removes the npm directory and Room record. |
 
-测试还覆盖：两插件同时启用、按 Cordis 原生 config 校验拒绝配置、plugin deactivate fiber 清理、runtime 生命周期重建、Session 数据删除。测试使用实际上游 tarball 和 registry 依赖，不用 stub、假结果或 Kotlin 插件替身。
+The test also covers enabling both packages together, native Cordis configuration rejection, plugin Fiber disposal, runtime recreation, Session deletion, asynchronous cancellation, and a synchronous execution timeout. It uses upstream tarballs and registry dependencies rather than stubs, mock results, or Kotlin plugin substitutes.
 
-这证明所测两个 Cordis 插件在该模拟器配置下未改源码即可安装、配置和执行；**不能推出所有上游插件、所有 Node 包、全部 ABI 或所有上游 Harness profiles 都兼容。**
+## Plugin management behavior
 
-## 插件管理能力
-
-| 操作 | Android 行为 | 当前边界 |
+| Operation | Android behavior | Current boundary |
 |---|---|---|
-| 发现/安装 | 输入 npm package specifier；也可从 SAF 安装 `.tgz`；依赖在设备内解析 | 未提供上游 Plugin Market 搜索、profile/bundle 安装、任意 registry 设置或官方源签名验证 |
-| 激活 | 原版 Cordis Loader 调用包入口并挂载原始 plugin fiber | 缺少未装配的 profile services 时，兼容性仍会失败并显示 loader error |
-| 配置 | 编辑 JSON object；配置更新使用 Loader update，让原插件 schema 校验并重载 | JSON 输入不支持原 profile 的 YAML 标记/JS 表达式编辑体验；复杂非 JSON 配置尚未测试 |
-| 依赖 | npm 在设备本地解析生产依赖、peer dependency 和 lockfile integrity | `ignore-scripts=true`；不运行依赖安装脚本或 native build；Android 平台依赖可能不可用 |
-| 执行 | 原版 `ctx.tools.schemas()` 和 `ctx.tools.execute()` | Kotlin Harness 目前承载 Agent 模型循环；不是原版 `dsh-agent-loop` 的完整重用 |
-| 错误 | 配置异常和工具错误传回本地 UI/消息/日志 | 没有独立插件 stdout/stderr 浏览器或按插件分级诊断页面 |
-| 停用/卸载 | Fiber/disposable 生命周期由原版 Loader 执行；卸载移除插件 Room 记录和 npm package | 会话事件保留到用户删除其会话时，再由本地会话删除流程销毁 Agent scope 并清理快照；npm 公共依赖按 npm tree 使用情况重算 |
-| 更新 | 再安装明确版本可替换已安装包 | 无自动更新、变更审查、profile 回滚界面或版本兼容豁免界面 |
+| Discover and install | Enter an npm package specifier or choose a `.tgz` through SAF; resolve dependencies on-device | No upstream Plugin Market search, profile/bundle installation, arbitrary registry setting, or official-source signature verification. |
+| Activate | Original Cordis Loader invokes the package entry point and attaches the original plugin Fiber | A plugin requiring an unassembled profile service can fail with its real loader error. |
+| Configure | Edit a JSON object; Loader update lets the upstream schema validate and reload an enabled plugin | The editor does not provide the upstream profile's YAML, JavaScript marker, or complex overlay editing interface. |
+| Resolve dependencies | npm resolves production and peer dependencies and checks lockfile integrity on-device | `ignore-scripts=true`; dependency lifecycle scripts and native builds are not run, and Android-specific dependencies may be unavailable. |
+| Execute tools | Original `ctx.tools.schemas()` and `ctx.tools.execute()` | Kotlin hosts the current Agent loop; this is not full reuse of the upstream `dsh-agent-loop`. |
+| Report errors | Configuration and tool errors flow to local UI, messages, and logs | There is no separate per-plugin stdout/stderr browser or detailed plugin diagnostics page. |
+| Disable and uninstall | Original Loader performs Fiber/disposable cleanup; uninstall removes the plugin Room record and npm package | Cordis Session events remain until the user deletes the session, at which point the local deletion path destroys the Agent scope and snapshot. npm's package tree handles shared dependency removal. |
+| Update | Reinstalling a specified version can replace an installed package | No automatic update, change-review, profile rollback, or compatibility-override interface. |
 
-## 未验证或不兼容场景
+## Platform and runtime boundaries
 
-- 上游所有 bundle/profile 组合尚未装配；只验证了上述两个实际插件包。
-- Import seam 通过 npm 项目根目录中的 ESM helper 调用 Node 原生 `import()`，以保留 exports 条件和异步模块加载语义；两个已测上游包本身不含顶层 `await`，实际需要顶层 `await` 的上游包仍未验证。特殊 loader hook、host-process CLI loader 也未验证。
-- 需要 `preinstall`/`install`/`postinstall` 脚本的 npm 依赖不可用，因为 npm 安装脚本被关闭。脚本若编译桌面二进制或下载平台资源也不能假设 Android 可运行。
-- 原生 Node addons 必须为目标 Android ABI/NDK/Bionic 构建且与嵌入式 Node ABI 匹配。桌面 Linux、macOS、Windows addon 不能直接复用；项目没有宣称这类插件可用。
-- 使用桌面 Bash、PTY、PowerShell、Windows/macOS GUI、全局系统路径、root、桌面 browser automation、MCP 服务、远程 shell、上游 sandbox/job manager 等的平台插件仍未验证或不兼容。
-- 未提供 Cordis 插件级 OS 进程隔离、CPU/内存 quota、Node capability 权限拦截或 native crash containment。插件可能访问其 Node runtime 能访问的本地数据并发起网络请求；Android app UID、内存和 native crash 仍由所有插件共享。
-- Node runtime 运行在 app 内，NPM 依赖在设备安装前会访问 registry；Harness 和插件执行本身不在网络端运行。
-- physical phone、x86_64 Android emulator、Android 更低 API、长期后台执行和系统内存压力场景尚未测试。
+- The complete upstream bundle/profile combinations are not assembled; the device run covers the two packages listed above.
+- The import seam uses an ESM helper at the npm project root and Node's native `import()` to preserve `exports` conditions and asynchronous module semantics. The tested packages do not use top-level `await`; packages that require it, custom loader hooks, and host-process CLI loaders need separate validation.
+- npm lifecycle scripts are disabled. Dependencies that require `preinstall`, `install`, or `postinstall` cannot rely on those steps. Scripts that compile desktop binaries or download platform resources may not work on Android.
+- Native Node addons must be built for the Android ABI, NDK/Bionic, and embedded Node ABI. Linux, macOS, and Windows addons are not directly reusable.
+- Plugins share the app process and UID. There is no per-plugin OS process isolation, CPU/memory quota, Node capability enforcement, or native crash containment. Plugins can access data available to the Node runtime and can make network requests.
+- The Node runtime is in the app process; npm dependency downloads happen during installation. Harness and plugin execution do not run on a network host.
+- Physical phones, x86_64 emulators, lower Android API levels, long background execution, and system memory pressure require additional device testing.
 
-Javet bridge 对一次 Node promise operation 默认设置 5 分钟 wall-time watchdog，并在 Kotlin coroutine 被取消时请求终止当前 V8 execution。Android 测试还在同一 runtime 中验证了待定 Promise 取消以及 1 秒 watchdog 打断同步死循环，随后 runtime 继续返回 `42`。这只验证了当前 arm64 模拟器/Javet 版本中的 CPU 执行终止；它不是 JavaScript capability 或内存隔离，native addon 崩溃仍可能终止整个进程。
+The Javet bridge has a five-minute wall-time watchdog per Node Promise operation by default. Coroutine cancellation requests termination of active V8 execution. Instrumentation also tested cancelling a pending Promise and interrupting a synchronous loop with a one-second watchdog, after which the same runtime returned `42`. This exercises CPU execution termination on the tested arm64 emulator/runtime; it does not isolate JavaScript capabilities or memory, and a native addon crash can still terminate the app process.
 
-由于可执行代码可能读写应用私有数据或联网，安装或启用前应核实包名、版本和发布来源。测试通过不是对包作者或代码安全性的证明。
+Plugin code can read app-private data available to Node.js and make network requests. Confirm the package name, version, and source before enabling a package.

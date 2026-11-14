@@ -2,6 +2,8 @@ package ai.comicine.dshmobile.engine
 
 import android.content.Context
 import android.os.SystemClock
+import androidx.core.content.ContextCompat
+import ai.comicine.dshmobile.R
 import ai.comicine.dshmobile.data.HarnessRepository
 import ai.comicine.dshmobile.data.HarnessSettings
 import ai.comicine.dshmobile.data.MessageEntity
@@ -57,9 +59,10 @@ class HarnessEngine(
     private val credentials: CredentialStore,
     private val pluginManager: PluginManager,
 ) {
+    private val localizedContext = ContextCompat.getContextForLanguage(context.applicationContext)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val settingsStore = SettingsStore(context)
-    private val messagesClient = DeepSeekMessagesClient()
+    private val messagesClient = DeepSeekMessagesClient(localizedContext)
     private val toolExecutor = ToolExecutor(context, pluginManager)
     private val taskMap = ConcurrentHashMap<String, Job>()
     private val approvalWaiters = ConcurrentHashMap<String, CompletableDeferred<Boolean>>()
@@ -90,8 +93,8 @@ class HarnessEngine(
 
     fun start(sessionId: String, prompt: String): Job = synchronized(taskMap) {
         val cleanPrompt = prompt.trim()
-        require(cleanPrompt.isNotEmpty()) { "请输入内容" }
-        check(taskMap[sessionId]?.isActive != true) { "此会话仍有任务运行" }
+        require(cleanPrompt.isNotEmpty()) { localizedContext.getString(R.string.error_prompt_required) }
+        check(taskMap[sessionId]?.isActive != true) { localizedContext.getString(R.string.error_session_task_running) }
         val task = scope.launch(start = CoroutineStart.LAZY) { runTurn(sessionId, cleanPrompt) }
         taskMap[sessionId] = task
         _runningSessions.update { it + sessionId }
@@ -127,7 +130,7 @@ class HarnessEngine(
     fun observeMessages(sessionId: String) = repository.messages(sessionId)
 
     suspend fun exportSession(sessionId: String): String {
-        val session = repository.session(sessionId) ?: throw IllegalArgumentException("会话不存在")
+        val session = repository.session(sessionId) ?: throw IllegalArgumentException(localizedContext.getString(R.string.error_session_not_found))
         val messages = repository.messagesNow(sessionId)
         return JSONObject()
             .put("format", "deepseek-harness-mobile-session-v1")
@@ -161,9 +164,9 @@ class HarnessEngine(
         if (!hasSlot) return
         var activeMessageId: String? = null
         try {
-            val session = repository.session(sessionId) ?: throw IllegalStateException("会话不存在")
+            val session = repository.session(sessionId) ?: throw IllegalStateException(localizedContext.getString(R.string.error_session_not_found))
             repository.setSessionState(sessionId, "running")
-            repository.appendLog(sessionId, "turn.start", "开始执行新一轮任务")
+            repository.appendLog(sessionId, "turn.start", localizedContext.getString(R.string.engine_log_turn_started))
             repository.saveMessage(MessageEntity(
                 id = UUID.randomUUID().toString(),
                 sessionId = sessionId,
@@ -173,13 +176,13 @@ class HarnessEngine(
             ))
             repository.updateTitleIfDefault(sessionId, prompt)
             val apiKey = credentials.getApiKey()?.takeIf { it.isNotBlank() }
-                ?: throw ProviderException("请先在设置中填写 DeepSeek API Key")
+                ?: throw ProviderException(localizedContext.getString(R.string.error_api_key_required))
 
             var step = 0
             while (true) {
                 currentCoroutineContext().ensureActive()
                 step++
-                repository.appendLog(sessionId, "step.start", "模型请求 $step", "model=${capturedSettings.model}")
+                repository.appendLog(sessionId, "step.start", localizedContext.getString(R.string.engine_log_model_step, step), "model=${capturedSettings.model}")
                 pluginManager.beforeStep(sessionId, step == 1)
                 val toolDefinitions = toolExecutor.definitions(sessionId)
                 val messageId = UUID.randomUUID().toString()
@@ -223,16 +226,17 @@ class HarnessEngine(
                 repository.appendLog(
                     sessionId,
                     "assistant.message",
-                    if (assistantTurn.toolCalls.isEmpty()) "模型响应完成" else "模型请求执行 ${assistantTurn.toolCalls.size} 个工具",
+                    if (assistantTurn.toolCalls.isEmpty()) localizedContext.getString(R.string.engine_log_model_completed)
+                    else localizedContext.getString(R.string.engine_log_tool_count, assistantTurn.toolCalls.size),
                     "stopReason=${assistantTurn.stopReason}; inputTokens=${assistantTurn.inputTokens}; outputTokens=${assistantTurn.outputTokens}",
                 )
                 if (assistantTurn.toolCalls.isEmpty()) break
 
                 if (step >= capturedSettings.maxAgentSteps) {
                     for (call in assistantTurn.toolCalls) {
-                        val message = "未执行：本轮已达到设置的 Agent 步数上限。"
+                        val message = localizedContext.getString(R.string.tool_result_not_run)
                         repository.saveMessage(toolMessage(sessionId, call, message, true))
-                        repository.appendLog(sessionId, "tool.denied", "步数上限，未执行 ${call.name}", call.argumentsJson)
+                        repository.appendLog(sessionId, "tool.denied", localizedContext.getString(R.string.engine_log_step_limit, call.name), call.argumentsJson)
                     }
                     repository.setSessionState(sessionId, "limit")
                     return
@@ -258,13 +262,13 @@ class HarnessEngine(
                     repository.appendLog(
                         sessionId,
                         if (result.isError) "tool.error" else "tool.result",
-                        "${result.call.name} ${if (result.isError) "失败" else "完成"}",
+                        localizedContext.getString(if (result.isError) R.string.engine_log_tool_failed else R.string.engine_log_tool_completed, result.call.name),
                         result.output.take(20_000),
                     )
                 }
             }
             repository.setSessionState(sessionId, "idle")
-            repository.appendLog(sessionId, "turn.end", "本轮任务完成")
+            repository.appendLog(sessionId, "turn.end", localizedContext.getString(R.string.engine_log_turn_completed))
         } catch (cancelled: CancellationException) {
             withContext(NonCancellable + Dispatchers.IO) {
                 activeMessageId?.let { id ->
@@ -272,7 +276,7 @@ class HarnessEngine(
                     if (current != null) repository.updateAssistant(id, current.content, current.thinking, current.toolCallsJson, "interrupted")
                 }
                 repository.setSessionState(sessionId, "cancelled")
-                repository.appendLog(sessionId, "turn.cancelled", "任务已取消")
+                repository.appendLog(sessionId, "turn.cancelled", localizedContext.getString(R.string.engine_log_turn_cancelled))
             }
             throw cancelled
         } catch (error: Exception) {
@@ -302,12 +306,12 @@ class HarnessEngine(
         definition: ToolDefinition?,
     ): ToolExecution {
         if (definition == null) return ToolExecution(call, "Tool is not available in this Android profile.", isError = true)
-        repository.appendLog(sessionId, "tool.call", "执行工具 ${call.name}", call.argumentsJson.take(20_000))
+        repository.appendLog(sessionId, "tool.call", localizedContext.getString(R.string.engine_log_execute_tool, call.name), call.argumentsJson.take(20_000))
         if (definition.requiresApproval) {
             val description = when (call.name) {
-                "shell" -> "将在 Android /system/bin/sh 中以此应用的普通权限运行，不会获得 root 权限。"
-                "write_file", "edit_file" -> "将在应用私有 workspace 中修改文件。"
-                else -> "将运行已安装插件的本地代码。"
+                "shell" -> localizedContext.getString(R.string.approval_shell_description)
+                "write_file", "edit_file" -> localizedContext.getString(R.string.approval_file_description)
+                else -> localizedContext.getString(R.string.approval_plugin_description)
             }
             if (!requestApproval(sessionId, call, description)) {
                 return ToolExecution(call, "The user denied this tool call. Do not retry it without new authorization.", isError = true)
@@ -322,7 +326,7 @@ class HarnessEngine(
         val item = PendingApproval(id, sessionId, call.name, description, call.argumentsJson)
         approvalWaiters[id] = deferred
         _approvals.update { it + item }
-        repository.appendLog(sessionId, "tool.approval", "等待用户批准 ${call.name}", call.argumentsJson.take(20_000))
+        repository.appendLog(sessionId, "tool.approval", localizedContext.getString(R.string.engine_log_waiting_approval, call.name), call.argumentsJson.take(20_000))
         return try {
             deferred.await()
         } finally {

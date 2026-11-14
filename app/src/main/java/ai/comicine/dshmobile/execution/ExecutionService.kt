@@ -10,9 +10,11 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import androidx.core.content.ContextCompat
 import androidx.core.app.ServiceCompat
 import ai.comicine.dshmobile.HarnessApplication
 import ai.comicine.dshmobile.MainActivity
+import ai.comicine.dshmobile.R
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -23,6 +25,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 class ExecutionService : Service() {
+    private val localizedContext by lazy { ContextCompat.getContextForLanguage(this) }
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var observerJob: Job? = null
 
@@ -38,7 +41,7 @@ class ExecutionService : Service() {
         ServiceCompat.startForeground(
             this,
             NOTIFICATION_ID,
-            notification("本地 Harness 任务正在运行"),
+            notification(localizedContext.getString(R.string.notification_task_running)),
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0,
         )
         observerJob?.cancel()
@@ -48,7 +51,10 @@ class ExecutionService : Service() {
                     delay(10_000)
                     if ((application as HarnessApplication).engine.runningSessions.value.isEmpty()) stopSelf(startId)
                 } else {
-                    val summary = if (sessions.size == 1) "1 个本地会话正在执行" else "${sessions.size} 个本地会话正在执行"
+                    val summary = localizedContext.getString(
+                        if (sessions.size == 1) R.string.notification_sessions_running_one else R.string.notification_sessions_running_many,
+                        sessions.size,
+                    )
                     val manager = getSystemService(NotificationManager::class.java)
                     manager.notify(NOTIFICATION_ID, notification(summary))
                 }
@@ -84,18 +90,18 @@ class ExecutionService : Service() {
         )
         return Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_notify_sync)
-            .setContentTitle("DeepSeek Harness")
+            .setContentTitle(localizedContext.getString(R.string.app_name))
             .setContentText(text)
             .setContentIntent(openApp)
             .setOngoing(true)
-            .addAction(Notification.Action.Builder(null, "取消任务", cancel).build())
+            .addAction(Notification.Action.Builder(null, localizedContext.getString(R.string.notification_cancel_task), cancel).build())
             .build()
     }
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val channel = NotificationChannel(CHANNEL_ID, "Harness tasks", NotificationManager.IMPORTANCE_LOW).apply {
-            description = "Shows when on-device Harness execution is active"
+        val channel = NotificationChannel(CHANNEL_ID, localizedContext.getString(R.string.notification_channel_name), NotificationManager.IMPORTANCE_LOW).apply {
+            description = localizedContext.getString(R.string.notification_channel_description)
             setShowBadge(false)
         }
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)

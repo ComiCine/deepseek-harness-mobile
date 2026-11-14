@@ -2,6 +2,7 @@ package ai.comicine.dshmobile.plugins
 
 import android.content.Context
 import android.os.SystemClock
+import ai.comicine.dshmobile.R
 import com.caoccao.javet.enums.V8AwaitMode
 import com.caoccao.javet.enums.V8RuntimeTerminationMode
 import com.caoccao.javet.interop.NodeRuntime
@@ -26,6 +27,8 @@ import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.CancellationException
+
+class PluginPackageException(val messageResourceId: Int) : IllegalArgumentException()
 
 /** Persistent on-device Node.js runtime used by the original Cordis plugin ecosystem. */
 class EmbeddedNodeRuntime(context: Context) : Closeable {
@@ -221,12 +224,12 @@ class EmbeddedNodeRuntime(context: Context) : Closeable {
                     val json = JSONObject(tar.readBytes().toString(Charsets.UTF_8))
                     return json.getString("name").also {
                         require(it.matches(Regex("(@[a-z0-9._-]+/)?[a-z0-9._-]+", RegexOption.IGNORE_CASE))) {
-                            "本地 npm 包名称无效"
+                            throw PluginPackageException(R.string.plugin_error_invalid_package_name)
                         }
                     }
                 }
             }
-            throw IllegalArgumentException("所选文件不是包含 package/package.json 的 npm .tgz 包")
+            throw PluginPackageException(R.string.plugin_error_invalid_archive)
         }
     }
 }

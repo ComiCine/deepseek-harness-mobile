@@ -1,5 +1,8 @@
 package ai.comicine.dshmobile.engine
 
+import android.content.Context
+import androidx.core.content.ContextCompat
+import ai.comicine.dshmobile.R
 import ai.comicine.dshmobile.data.HarnessSettings
 import ai.comicine.dshmobile.data.MessageEntity
 import kotlinx.coroutines.CancellationException
@@ -39,7 +42,8 @@ class ProviderException(
 ) : IOException(message, cause)
 
 /** Streams the upstream DeepSeek Messages protocol. */
-class DeepSeekMessagesClient {
+class DeepSeekMessagesClient(context: Context? = null) {
+    private val localizedContext = context?.let(ContextCompat::getContextForLanguage)
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(5, TimeUnit.MINUTES)
@@ -333,21 +337,27 @@ class DeepSeekMessagesClient {
         }
         fun size() = groups.sumOf { group -> group.sumOf { it.content.length + it.thinking.length + it.toolCallsJson.length + 48 } }
         while (groups.size > 1 && size() > maxCharacters) groups.removeAt(0)
-        if (size() > maxCharacters) throw ProviderException("当前对话最后一轮超过本机请求内存上限；请开始新会话或缩短输入")
+        if (size() > maxCharacters) {
+            throw ProviderException(message(R.string.provider_error_request_too_large, "The last turn exceeds the on-device request memory limit."))
+        }
         return groups.flatten()
     }
 
     private fun endpoint(baseUrl: String): HttpUrl {
-        val parsed = baseUrl.toHttpUrlOrNull() ?: throw ProviderException("模型 API 地址无效")
+        val parsed = baseUrl.toHttpUrlOrNull() ?: throw ProviderException(message(R.string.provider_error_invalid_url, "The model API URL is invalid"))
         val loopback = parsed.host in setOf("localhost", "127.0.0.1", "::1")
         if (parsed.scheme != "https" && !(parsed.scheme == "http" && loopback)) {
-            throw ProviderException("模型 API 必须使用 HTTPS")
+            throw ProviderException(message(R.string.provider_error_https_required, "The model API must use HTTPS"))
         }
-        if (parsed.query != null || parsed.fragment != null) throw ProviderException("模型 API 地址不能包含 query 或 fragment")
+        if (parsed.query != null || parsed.fragment != null) {
+            throw ProviderException(message(R.string.provider_error_query_fragment, "The model API URL cannot include a query or fragment"))
+        }
         val currentPath = parsed.encodedPath.trimEnd('/')
         val apiPath = if (currentPath.endsWith("/v1")) "$currentPath/messages" else "$currentPath/v1/messages"
         return parsed.newBuilder().encodedPath(apiPath).build()
     }
+
+    private fun message(resourceId: Int, fallback: String): String = localizedContext?.getString(resourceId) ?: fallback
 
     private fun providerFailure(response: Response): ProviderException {
         val raw = response.body?.string()?.take(64 * 1024).orEmpty()

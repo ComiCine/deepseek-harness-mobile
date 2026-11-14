@@ -1,6 +1,6 @@
 # DeepSeek Harness for Android
 
-DeepSeek Harness runs its orchestration, tools, sessions, and original Cordis plugins on your Android device. Model inference uses the provider API configured in the app.
+DeepSeek Harness runs its orchestration, tools, sessions, and plugin runtime on your Android device. You can install original Cordis plugins locally; a plugin can run when its required upstream services and Android-compatible dependencies are available. Model inference uses the provider API configured in the app.
 
 ## Install
 

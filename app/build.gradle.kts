@@ -82,7 +82,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 
     // The Android artifact includes the Javet Java classes and native Node runtime.
-    implementation("com.caoccao.javet:javet-node-android:6.0.3")
+    implementation("com.caoccao.javet:javet-node-android-i18n:6.0.3")
     implementation("org.apache.commons:commons-compress:1.28.0")
 
     testImplementation("junit:junit:4.13.2")

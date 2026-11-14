@@ -2,7 +2,7 @@
 
 ## Compatibility target
 
-The Android plugin screen accepts an original npm package name/version or original `.tgz` archive. The installed package retains its upstream ESM files, `package.json`, dependency declarations, and Cordis plugin export. The app does not rewrite plugin source, manifests, interfaces, or internal implementations, and does not substitute Kotlin plugin implementations. The runtime uses on-device npm, Javet Node Android, original Cordis, and `@deepseek-ai/cordis-plugin-loader`.
+The Android plugin screen accepts an original npm package name/version or original `.tgz` archive. The installed package retains its upstream ESM files, `package.json`, dependency declarations, and Cordis plugin export. The app does not rewrite plugin source, manifests, interfaces, or internal implementations, and does not substitute Kotlin plugin implementations. The runtime uses on-device npm, Javet Node Android i18n (Node.js v26.13.0 and V8 14.6 on the tested build), original Cordis, and `@deepseek-ai/cordis-plugin-loader`.
 
 An incompatible package reports its actual dependency-installation, Cordis configuration/activation, or tool-execution error. A successful npm installation only means npm acquired the package; it does not provide DSH services, desktop commands, or native addons that the package may require.
 
@@ -18,7 +18,7 @@ The assembled DSH service set is limited. The npm tree includes same-version dep
 
 ## Original plugins exercised on Android
 
-The `:app:connectedDebugAndroidTest` instrumentation run used the `dsh-api36-arm64` Android API 36 `arm64-v8a` emulator. AndroidJUnitRunner reported one test passed. Test source: `app/src/androidTest/java/ai/comicine/dshmobile/plugins/PluginRuntimeInstrumentedTest.kt`.
+The instrumentation tests below were run individually on the `dsh-api36-arm64` Android API 36 `arm64-v8a` emulator. Each reported one test passed. The provider, filesystem, and Unicode-runtime tests have separate test source files in `app/src/androidTest/java/ai/comicine/dshmobile/plugins/`.
 
 | Upstream package | Installation route | Exercised behavior |
 |---|---|---|
@@ -26,6 +26,20 @@ The `:app:connectedDebugAndroidTest` instrumentation run used the `dsh-api36-arm
 | `@deepseek-ai/dsh-tool-todo@0.2.2-rc.3` | Original published `.tgz` archive | Original package name, version, manifest, and configuration; local resolution of `@deepseek-ai/schemastery` and `zod`; original `ctx.tools` call to `todo_write`; writes a real Session `todo/write` event; invalid multiple `in_progress` items produce the original tool error; recreating Node restores the existing Session event; uninstall removes the npm directory and Room record. |
 
 The test also covers enabling both packages together, native Cordis configuration rejection, plugin Fiber disposal, runtime recreation, Session deletion, asynchronous cancellation, and a synchronous execution timeout. It uses upstream tarballs and registry dependencies rather than stubs, mock results, or Kotlin plugin substitutes.
+
+`UpstreamFilesystemPluginsInstrumentedTest.kt` installs these three exact registry packages through the Android PluginManager and embedded npm runtime:
+
+| Upstream package | Installation route | Exercised behavior |
+|---|---|---|
+| `@deepseek-ai/dsh-fs-local@0.2.2-rc.3` | npm registry package name and pinned version | Original Cordis filesystem service activates with an app-private temporary workspace as its configured cwd; path resolution, metadata lookup, and UTF-8 text reading are exercised. |
+| `@deepseek-ai/dsh-working-directory@0.2.2-rc.3` | npm registry package name and pinned version | Original Cordis service activates with the filesystem provider and uses the configured app-private working directory for the Session. |
+| `@deepseek-ai/dsh-tool-fs@0.2.2-rc.3` | npm registry package name and pinned version | Original `read` schema and implementation read a real relative workspace path; missing-path and invalid-offset errors, deactivation, tool deregistration, and uninstall are checked. The test config disables `read_image`, `write`, `edit`, and `apply_patch`. |
+
+This filesystem test does not establish complete compatibility. Watchers, image attachments, mutations, patches, and other upstream filesystem operations were not exercised. The upstream `dsh-fs-local` backend is not a sandbox: its `cwd` controls relative path resolution but does not confine absolute or parent-relative paths. The test is read-only and uses only an app-private fixture.
+
+## Original provider packages exercised on Android
+
+`UpstreamProviderRuntimeInstrumentedTest.kt` installs the published `@deepseek-ai/dsh-llm-deepseek-api-key@0.2.2-rc.3` and `@deepseek-ai/dsh-credentials-local@0.2.2-rc.3` packages into an isolated app-private npm tree. It imports the original Cordis LLM, credentials, and provider packages without source changes; checks registration and model resolution for `deepseek-official` / `deepseek-flash`; then sends the upstream provider request to a test-only loopback HTTP/SSE endpoint. The test checks the POST path, authentication header, model and prompt payload, streamed text delta, and stop event. This verifies the on-device provider adapter path; it does not claim a live request to DeepSeek's service.
 
 ## Plugin management behavior
 
@@ -42,7 +56,7 @@ The test also covers enabling both packages together, native Cordis configuratio
 
 ## Platform and runtime boundaries
 
-- The complete upstream bundle/profile combinations are not assembled; the device run covers the two packages listed above.
+- The complete upstream bundle/profile combinations are not assembled; device tests cover only the packages and operations listed above.
 - The import seam uses an ESM helper at the npm project root and Node's native `import()` to preserve `exports` conditions and asynchronous module semantics. The tested packages do not use top-level `await`; packages that require it, custom loader hooks, and host-process CLI loaders need separate validation.
 - npm lifecycle scripts are disabled. Dependencies that require `preinstall`, `install`, or `postinstall` cannot rely on those steps. Scripts that compile desktop binaries or download platform resources may not work on Android.
 - Native Node addons must be built for the Android ABI, NDK/Bionic, and embedded Node ABI. Linux, macOS, and Windows addons are not directly reusable.
@@ -51,5 +65,7 @@ The test also covers enabling both packages together, native Cordis configuratio
 - Physical phones, x86_64 emulators, lower Android API levels, long background execution, and system memory pressure require additional device testing.
 
 The Javet bridge has a five-minute wall-time watchdog per Node Promise operation by default. Coroutine cancellation requests termination of active V8 execution. Instrumentation also tested cancelling a pending Promise and interrupting a synchronous loop with a one-second watchdog, after which the same runtime returned `42`. This exercises CPU execution termination on the tested arm64 emulator/runtime; it does not isolate JavaScript capabilities or memory, and a native addon crash can still terminate the app process.
+
+An API 36 arm64 device test confirms that the selected Node i18n runtime parses Unicode property escapes used by original DeepSeek provider packages. This test does not by itself establish provider compatibility; package loading, Cordis registration, and real request/stream behavior are verified separately.
 
 Plugin code can read app-private data available to Node.js and make network requests. Confirm the package name, version, and source before enabling a package.

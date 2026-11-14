@@ -14,7 +14,7 @@ The Android instrumentation-test assets include unmodified release tarballs of `
 
 ## Runtime and Compression Dependencies
 
-- `com.caoccao.javet:javet-node-android:6.0.3` — Apache License 2.0, as declared by its artifact POM. Project: [caoccao/Javet](https://github.com/caoccao/Javet).
+- `com.caoccao.javet:javet-node-android-i18n:6.0.3` — Apache License 2.0, as declared by its artifact POM. Project: [caoccao/Javet](https://github.com/caoccao/Javet).
 - `org.apache.commons:commons-compress:1.28.0` — Apache License 2.0. Project: [Apache Commons Compress](https://commons.apache.org/proper/commons-compress/).
 
 ## Build and Application Dependencies

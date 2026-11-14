@@ -65,7 +65,7 @@ class EmbeddedNodeRuntime(context: Context) : Closeable {
         runtime?.let { return it }
         ensureNpmExtracted()
         val options = NodeRuntimeOptions().setBuiltInModuleResolution(true)
-        val created = V8Host.getNodeInstance().createV8Runtime<NodeRuntime>(options)
+        val created = V8Host.getNodeI18nInstance().createV8Runtime<NodeRuntime>(options)
         // Upstream Cordis Loader uses Function to evaluate its supported !!js config values.
         created.allowEval(true)
         created.getNodeModule(NodeModuleModule::class.java).setRequireRootDirectory(pluginsRoot)
